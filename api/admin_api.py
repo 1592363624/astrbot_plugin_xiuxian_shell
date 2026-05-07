@@ -2,7 +2,7 @@
 后台管理API
 提供后台管理系统的HTTP接口
 """
-from typing import Dict, Any
+from typing import Dict, Any, TYPE_CHECKING
 from aiohttp import web
 from ..services import (
     PlayerService,
@@ -11,6 +11,9 @@ from ..services import (
     InventoryService,
     EventService,
 )
+
+if TYPE_CHECKING:
+    from ..config import ConfigManager
 
 
 class AdminAPI:
@@ -23,6 +26,7 @@ class AdminAPI:
         combat_service: CombatService,
         inventory_service: InventoryService,
         event_service: EventService,
+        config_manager: "ConfigManager",
     ):
         """
         初始化后台管理API
@@ -33,12 +37,14 @@ class AdminAPI:
             combat_service: 战斗服务
             inventory_service: 背包服务
             event_service: 事件服务
+            config_manager: 配置管理器
         """
         self.player_service = player_service
         self.cultivation_service = cultivation_service
         self.combat_service = combat_service
         self.inventory_service = inventory_service
         self.event_service = event_service
+        self.config_manager = config_manager
 
     # ==================== 玩家管理 ====================
 
@@ -242,13 +248,13 @@ class AdminAPI:
 
     async def get_config(self, request: web.Request) -> web.Response:
         """获取配置"""
-        # 配置需要从数据库或配置文件读取
-        return web.json_response({"code": 0, "data": {}})
+        config = self.config_manager.get_all()
+        return web.json_response({"code": 0, "data": config})
 
     async def update_config(self, request: web.Request) -> web.Response:
         """更新配置"""
         data = await request.json()
-        # 更新配置逻辑
+        self.config_manager.update(data)
         return web.json_response({"code": 0, "message": "配置更新成功"})
 
     # ==================== 数据统计 ====================

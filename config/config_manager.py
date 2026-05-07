@@ -21,6 +21,7 @@ class ConfigManager:
         "game": {
             "max_level": 100,
             "base_exp_multiplier": 1.5,
+            "register_cooldown": 60,
             "cultivation_cooldown": 300,
             "explore_cooldown": 600,
             "combat_cooldown": 180,

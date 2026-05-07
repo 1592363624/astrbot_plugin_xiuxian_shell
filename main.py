@@ -37,21 +37,22 @@ class XiuxianPlugin(Star):
         # 初始化迁移管理器
         self.migration_manager = MigrationManager(self.db_manager)
         # 初始化服务层
-        self.player_service = PlayerService(self.db_manager)
+        self.player_service = PlayerService(self.db_manager, self.config_manager)
         self.cultivation_service = CultivationService(self.db_manager)
         self.combat_service = CombatService(self.db_manager)
         self.inventory_service = InventoryService(self.db_manager)
         self.event_service = EventService(self.db_manager)
         # 初始化API层
         self.player_api = PlayerAPI(self.player_service)
-        self.item_api = ItemAPI(self.inventory_service)
-        self.skill_api = SkillAPI(self.cultivation_service)
+        self.item_api = ItemAPI(self.inventory_service, self.player_service)
+        self.skill_api = SkillAPI(self.cultivation_service, self.player_service)
         self.admin_api = AdminAPI(
             self.player_service,
             self.cultivation_service,
             self.combat_service,
             self.inventory_service,
             self.event_service,
+            self.config_manager,
         )
 
 

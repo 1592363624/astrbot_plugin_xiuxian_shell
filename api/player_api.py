@@ -37,7 +37,17 @@ class PlayerAPI:
         """
         try:
             player = await self.player_service.create_player(user_id, username)
-            return f"注册成功！欢迎 {username} 进入修仙世界！\n当前境界：练气期\n初始灵石：100"
+            # 从数据库动态读取初始境界名称
+            realm = await self.player_service.db.fetch_one(
+                "SELECT name FROM realms WHERE id = ?",
+                (player.realm_id,)
+            )
+            realm_name = realm["name"] if realm else "未知"
+            return (
+                f"注册成功！欢迎 {username} 进入修仙世界！\n"
+                f"当前境界：{realm_name}\n"
+                f"初始灵石：{player.spirit_stone}"
+            )
         except ValueError as e:
             return str(e)
         except Exception as e:
@@ -53,27 +63,26 @@ class PlayerAPI:
         Returns:
             str: 状态信息
         """
-        player = await self.player_service.get_player_by_user_id(user_id)
-        if not player:
-            return "你还没有注册修仙角色，请先使用【修仙注册】"
-        
-        # 获取境界信息
-        from ..database import DatabaseManager
+        player_dict, error = await self.player_service.check_player_registered(user_id)
+        if error:
+            return error
+
+        # 获取境界名称
         realm = await self.player_service.db.fetch_one(
             "SELECT name FROM realms WHERE id = ?",
-            (player.realm_id,)
+            (player_dict["realm_id"],)
         )
         realm_name = realm["name"] if realm else "未知"
-        
+
         status = f"""
 【修仙状态】
-道号：{player.username}
+道号：{player_dict['username']}
 境界：{realm_name}
-修为：{player.experience}
-灵石：{player.spirit_stone}
-生命：{player.health}/{player.max_health}
-攻击：{player.attack}
-防御：{player.defense}
+修为：{player_dict['experience']}
+灵石：{player_dict['spirit_stone']}
+生命：{player_dict['health']}/{player_dict['max_health']}
+攻击：{player_dict['attack']}
+防御：{player_dict['defense']}
         """
         return status.strip()
 
@@ -87,23 +96,23 @@ class PlayerAPI:
         Returns:
             str: 探索结果
         """
-        player = await self.player_service.get_player_by_user_id(user_id)
-        if not player:
-            return "你还没有注册修仙角色，请先使用【修仙注册】"
-        
+        player_dict, error = await self.player_service.check_player_registered(user_id)
+        if error:
+            return error
+
         if self.event_service:
-            result = await self.event_service.trigger_event(player.id, "explore")
+            result = await self.event_service.trigger_event(player_dict["id"], "explore")
             if result.get("triggered"):
                 return result["message"]
-        
+
         # 默认探索结果
         import random
         exp_gain = random.randint(5, 20)
         stone_gain = random.randint(1, 10)
-        
-        await self.player_service.modify_resource(player.id, "experience", exp_gain)
-        await self.player_service.modify_resource(player.id, "spirit_stone", stone_gain)
-        
+
+        await self.player_service.modify_resource(player_dict["id"], "experience", exp_gain)
+        await self.player_service.modify_resource(player_dict["id"], "spirit_stone", stone_gain)
+
         return f"你外出探索，获得 {exp_gain} 修为和 {stone_gain} 灵石"
 
     # ==================== HTTP API接口 ====================

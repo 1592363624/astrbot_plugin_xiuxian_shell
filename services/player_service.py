@@ -2,24 +2,89 @@
 玩家服务
 处理玩家相关的业务逻辑
 """
+import re
+import time
 import uuid
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple, TYPE_CHECKING
 from astrbot.api import logger
 from ..database import DatabaseManager
 from ..models import Player
+
+if TYPE_CHECKING:
+    from ..config import ConfigManager
 
 
 class PlayerService:
     """玩家服务类"""
 
-    def __init__(self, db_manager: DatabaseManager):
+    def __init__(self, db_manager: DatabaseManager, config_manager: "ConfigManager"):
         """
         初始化玩家服务
         
         Args:
             db_manager: 数据库管理器实例
+            config_manager: 配置管理器实例
         """
         self.db = db_manager
+        self.config_manager = config_manager
+        self._register_timestamps: Dict[str, float] = {}
+
+    def _validate_username(self, username: str) -> Optional[str]:
+        """
+        校验用户名合法性
+        规则：2-10个中文字符
+        
+        Args:
+            username: 用户名
+            
+        Returns:
+            Optional[str]: 校验失败时返回错误信息，成功返回 None
+        """
+        if not username:
+            return "角色名不能为空，请输入2-10个中文字符"
+        if not re.fullmatch(r'^[\u4e00-\u9fa5]{2,10}$', username):
+            return "角色名仅允许2-10个中文字符，请重新输入"
+        return None
+
+    def _check_register_cooldown(self, user_id: str) -> Optional[str]:
+        """
+        检查注册频率限制
+        
+        Args:
+            user_id: 用户ID
+            
+        Returns:
+            Optional[str]: 频率限制触发时返回错误信息，否则返回 None
+        """
+        last_time = self._register_timestamps.get(user_id)
+        if last_time is not None:
+            cooldown = self.config_manager.get("game.register_cooldown", 60)
+            elapsed = time.time() - last_time
+            if elapsed < cooldown:
+                remaining = int(cooldown - elapsed)
+                return f"注册太频繁，请 {remaining} 秒后再试"
+        return None
+
+    async def check_player_registered(self, user_id: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+        """
+        统一检查玩家是否已注册的公共方法
+        
+        Args:
+            user_id: 用户ID
+            
+        Returns:
+            Tuple[Optional[Dict], Optional[str]]: 
+                - 已注册: (player_dict, None)
+                - 未注册: (None, "你还没有注册修仙角色，请先使用【修仙注册】")
+        """
+        player = await self.db.fetch_one(
+            "SELECT id, username, realm_id, experience, spirit_stone, health, max_health, attack, defense "
+            "FROM players WHERE user_id = ?",
+            (user_id,)
+        )
+        if not player:
+            return None, "你还没有注册修仙角色，请先使用【修仙注册】"
+        return player, None
 
     async def create_player(self, user_id: str, username: str) -> Player:
         """
@@ -31,12 +96,27 @@ class PlayerService:
             
         Returns:
             Player: 创建的玩家对象
+            
+        Raises:
+            ValueError: 用户名不合法、频率限制、或玩家已存在
         """
+        username = username.strip()
+
+        # 校验用户名合法性
+        name_error = self._validate_username(username)
+        if name_error:
+            raise ValueError(name_error)
+
+        # 检查注册频率限制
+        cooldown_error = self._check_register_cooldown(user_id)
+        if cooldown_error:
+            raise ValueError(cooldown_error)
+
         # 检查玩家是否已存在
         existing = await self.get_player_by_user_id(user_id)
         if existing:
             raise ValueError("玩家已存在")
-        
+
         player_id = str(uuid.uuid4())
         sql = """
             INSERT INTO players (id, user_id, username)
@@ -44,7 +124,10 @@ class PlayerService:
         """
         await self.db.execute(sql, (player_id, user_id, username))
         await self.db.commit()
-        
+
+        # 记录注册时间，用于频率限制
+        self._register_timestamps[user_id] = time.time()
+
         logger.info(f"新玩家创建: {username} ({user_id})")
         return await self.get_player_by_id(player_id)
 
