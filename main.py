@@ -21,9 +21,9 @@ from .api import PlayerAPI, ItemAPI, SkillAPI, AdminAPI
 @register(
     "astrbot_plugin_xiuxian_shell",
     "xiuxian_dev",
-    "AstrBot文字修仙游戏插件",
-    "1.0.0",
-    "https://github.com/xiuxian-dev/astrbot_plugin_xiuxian_shell",
+    "重生之凡人修仙",
+    "0.0.1",
+    "https://github.com/1592363624/astrbot_plugin_xiuxian_shell",
 )
 class XiuxianPlugin(Star):
     """修仙游戏插件主类"""
@@ -54,19 +54,22 @@ class XiuxianPlugin(Star):
             self.event_service,
         )
 
+
     async def initialize(self):
         """插件初始化"""
-        logger.info("修仙游戏插件初始化中...")
+        # 更新插件描述信息
+        self.description = "重生之凡人修仙，文字修仙游戏插件"
+        logger.info("重生之凡人修仙游戏插件初始化中...")
         # 应用数据库迁移
         await self.migration_manager.apply_migrations()
-        logger.info("修仙游戏插件初始化完成")
+        logger.info("重生之凡人修仙游戏插件初始化完成")
 
     async def terminate(self):
         """插件卸载"""
-        logger.info("修仙游戏插件卸载中...")
+        logger.info("重生之凡人修仙游戏插件卸载中...")
         # 关闭数据库连接
         await self.db_manager.close()
-        logger.info("修仙游戏插件已卸载")
+        logger.info("重生之凡人修仙游戏插件已卸载")
 
     # ==================== 命令注册区域 ====================
 

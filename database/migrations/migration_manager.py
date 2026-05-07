@@ -1,86 +1,190 @@
 """
 数据库迁移管理器
-负责数据库版本管理和迁移脚本执行
+基于 Alembic 实现数据库版本管理和迁移脚本执行
 """
-import importlib
-import pkgutil
+import asyncio
 from pathlib import Path
-from typing import List, Type
+from typing import Optional
+
+from alembic import command
+from alembic.config import Config as AlembicConfig
 from astrbot.api import logger
+
 from ..db_manager import DatabaseManager
-from .base_migration import BaseMigration
 
 
 class MigrationManager:
-    """数据库迁移管理器"""
+    """数据库迁移管理器（基于 Alembic）"""
+
+    # 插件根目录，用于定位 alembic 配置
+    _plugin_root: Optional[Path] = None
+    # Alembic 目录路径
+    _alembic_dir: Optional[Path] = None
 
     def __init__(self, db_manager: DatabaseManager):
         """
         初始化迁移管理器
-        
+
         Args:
             db_manager: 数据库管理器实例
         """
         self.db_manager = db_manager
-        self.migrations: List[Type[BaseMigration]] = []
+        if self._plugin_root is None:
+            # 自动推导路径：此文件在 database/migrations/ 下
+            # database/migrations/ -> database/ -> plugin_root
+            self_dir = Path(__file__).resolve().parent  # database/migrations/
+            db_dir = self_dir.parent  # database/
+            self.__class__._plugin_root = db_dir.parent  # plugin_root
+            self.__class__._alembic_dir = db_dir / "alembic"  # database/alembic/
 
-    async def apply_migrations(self):
-        """应用所有待执行的迁移"""
-        # 创建迁移记录表
-        await self._create_migration_table()
-        # 加载所有迁移脚本
-        self._load_migrations()
-        # 获取已执行的迁移版本
-        applied_versions = await self._get_applied_versions()
-        # 执行未应用的迁移
-        for migration_class in self.migrations:
-            migration = migration_class(self.db_manager)
-            if migration.version not in applied_versions:
-                logger.info(f"应用迁移: {migration.version} - {migration.description}")
-                await migration.up()
-                await self._record_migration(migration.version, migration.description)
-                logger.info(f"迁移完成: {migration.version}")
-        logger.info("所有迁移已应用完成")
+    @property
+    def plugin_root(self) -> Path:
+        return self._plugin_root
 
-    async def _create_migration_table(self):
-        """创建迁移记录表"""
-        sql = """
-        CREATE TABLE IF NOT EXISTS migration_history (
-            version TEXT PRIMARY KEY,
-            description TEXT,
-            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
+    @property
+    def alembic_ini_path(self) -> Path:
+        """alembic.ini 配置文件路径"""
+        return self.plugin_root / "alembic.ini"
+
+    @property
+    def alembic_dir(self) -> Path:
+        """alembic 迁移脚本目录"""
+        return self._alembic_dir
+
+    async def apply_migrations(self) -> None:
         """
-        await self.db_manager.execute(sql)
-        await self.db_manager.commit()
+        应用所有待执行的迁移
+        在插件启动时调用，确保数据库结构为最新版本
+        """
+        db_path = str(self.db_manager.db_path.resolve())
+        db_url = f"sqlite:///{db_path}"
 
-    def _load_migrations(self):
-        """加载所有迁移脚本"""
-        migrations_package = Path(__file__).parent
-        for importer, module_name, is_package in pkgutil.iter_modules([str(migrations_package)]):
-            if module_name.startswith("v") and module_name != "base_migration":
-                try:
-                    module = importlib.import_module(f".{module_name}", package=__package__)
-                    # 查找继承BaseMigration的类
-                    for attr_name in dir(module):
-                        attr = getattr(module, attr_name)
-                        if (isinstance(attr, type) and 
-                            issubclass(attr, BaseMigration) and 
-                            attr is not BaseMigration):
-                            self.migrations.append(attr)
-                except Exception as e:
-                    logger.error(f"加载迁移脚本失败 {module_name}: {e}")
-        # 按版本号排序
-        self.migrations.sort(key=lambda m: m.version)
+        # 构建 Alembic 配置
+        alembic_cfg = self._build_alembic_config(db_url)
 
-    async def _get_applied_versions(self) -> set:
-        """获取已执行的迁移版本"""
-        sql = "SELECT version FROM migration_history"
-        rows = await self.db_manager.fetch_all(sql)
-        return {row["version"] for row in rows}
+        # 确保数据库连接已建立
+        await self.db_manager.connect()
 
-    async def _record_migration(self, version: str, description: str):
-        """记录迁移执行"""
-        sql = "INSERT INTO migration_history (version, description) VALUES (?, ?)"
-        await self.db_manager.execute(sql, (version, description))
-        await self.db_manager.commit()
+        # 处理旧版迁移系统的兼容：如果存在旧表但没有 alembic_version，则标记为已迁移
+        await self._handle_legacy_migration()
+
+        # 在独立的线程中执行同步的 Alembic 迁移（避免阻塞异步事件循环）
+        await asyncio.get_event_loop().run_in_executor(
+            None, self._run_alembic_upgrade, alembic_cfg
+        )
+
+        logger.info("Alembic 数据库迁移已全部应用完成")
+
+    def _build_alembic_config(self, db_url: str) -> AlembicConfig:
+        """
+        构建 Alembic 配置对象
+
+        Args:
+            db_url: SQLAlchemy 格式的数据库连接 URL
+
+        Returns:
+            AlembicConfig: 配置对象
+        """
+        alembic_cfg = AlembicConfig(str(self.alembic_ini_path))
+        alembic_cfg.set_main_option("script_location", str(self.alembic_dir))
+        alembic_cfg.set_main_option("sqlalchemy.url", db_url)
+        return alembic_cfg
+
+    @staticmethod
+    def _run_alembic_upgrade(alembic_cfg: AlembicConfig) -> None:
+        """
+        执行 Alembic 升级到最新版本（同步方法，在 executor 中运行）
+
+        Args:
+            alembic_cfg: Alembic 配置对象
+        """
+        command.upgrade(alembic_cfg, "head")
+
+    async def _handle_legacy_migration(self) -> None:
+        """
+        处理从旧版自定义迁移系统到 Alembic 的过渡
+        如果数据库中存在旧系统的 migration_history 表但 Alembic 未初始化，
+        则将 Alembic 版本标记为 v001，避免重复创建表
+        """
+        table_exists = await self.db_manager.table_exists("alembic_version")
+        legacy_table_exists = await self.db_manager.table_exists("migration_history")
+
+        if not table_exists and legacy_table_exists:
+            logger.info("检测到旧版迁移记录表，正在迁移到 Alembic 版本管理...")
+            # 检查核心表是否已存在（如 players 表）
+            has_core_tables = await self.db_manager.table_exists("players")
+            if has_core_tables:
+                db_path = str(self.db_manager.db_path.resolve())
+                db_url = f"sqlite:///{db_path}"
+                alembic_cfg = self._build_alembic_config(db_url)
+                # 在 executor 中标记 Alembic 版本为 v001
+                await asyncio.get_event_loop().run_in_executor(
+                    None, self._stamp_to_revision, alembic_cfg, "v001"
+                )
+                logger.info("已将 Alembic 版本标记为 v001（与现有数据库结构对应）")
+            else:
+                logger.warning("旧版迁移记录表存在但核心表不存在，将执行全新迁移")
+
+    @staticmethod
+    def _stamp_to_revision(alembic_cfg: AlembicConfig, revision: str) -> None:
+        """
+        将数据库标记为指定版本，不实际执行迁移（同步方法，在 executor 中运行）
+
+        Args:
+            alembic_cfg: Alembic 配置对象
+            revision: 目标版本号
+        """
+        command.stamp(alembic_cfg, revision)
+
+    async def downgrade(self, revision: str = "-1") -> None:
+        """
+        回滚数据库到指定版本
+
+        Args:
+            revision: 目标版本号，默认为 "-1" 表示回滚一个版本
+        """
+        db_path = str(self.db_manager.db_path.resolve())
+        db_url = f"sqlite:///{db_path}"
+        alembic_cfg = self._build_alembic_config(db_url)
+
+        await asyncio.get_event_loop().run_in_executor(
+            None, self._run_alembic_downgrade, alembic_cfg, revision
+        )
+        logger.info(f"Alembic 数据库已回滚至版本: {revision}")
+
+    @staticmethod
+    def _run_alembic_downgrade(alembic_cfg: AlembicConfig, revision: str) -> None:
+        """
+        执行 Alembic 降级（同步方法，在 executor 中运行）
+
+        Args:
+            alembic_cfg: Alembic 配置对象
+            revision: 目标版本号
+        """
+        command.downgrade(alembic_cfg, revision)
+
+    def create_migration(self, message: str) -> None:
+        """
+        创建新的迁移脚本（开发辅助方法，同步调用）
+
+        Args:
+            message: 迁移描述信息
+        """
+        db_path = str(self.db_manager.db_path.resolve())
+        db_url = f"sqlite:///{db_path}"
+        alembic_cfg = self._build_alembic_config(db_url)
+        command.revision(alembic_cfg, autogenerate=False, message=message)
+        logger.info(f"已创建新的迁移脚本: {message}")
+
+    def auto_migration(self, message: str = "auto") -> None:
+        """
+        自动生成迁移脚本（基于 SQLAlchemy 元数据对比，同步调用）
+
+        Args:
+            message: 迁移描述信息
+        """
+        db_path = str(self.db_manager.db_path.resolve())
+        db_url = f"sqlite:///{db_path}"
+        alembic_cfg = self._build_alembic_config(db_url)
+        command.revision(alembic_cfg, autogenerate=True, message=message)
+        logger.info(f"已自动生成迁移脚本: {message}")
