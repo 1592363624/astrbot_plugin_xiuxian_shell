@@ -14,8 +14,9 @@ from .services import (
     CombatService,
     InventoryService,
     EventService,
+    CheckinService,
 )
-from .api import PlayerAPI, ItemAPI, SkillAPI, AdminAPI
+from .api import PlayerAPI, ItemAPI, SkillAPI, AdminAPI, CheckinAPI
 
 
 @register(
@@ -42,10 +43,13 @@ class XiuxianPlugin(Star):
         self.combat_service = CombatService(self.db_manager)
         self.inventory_service = InventoryService(self.db_manager)
         self.event_service = EventService(self.db_manager)
+        # 初始化签到服务
+        self.checkin_service = CheckinService(self.db_manager, self.config_manager)
         # 初始化API层
         self.player_api = PlayerAPI(self.player_service)
         self.item_api = ItemAPI(self.inventory_service, self.player_service)
         self.skill_api = SkillAPI(self.cultivation_service, self.player_service)
+        self.checkin_api = CheckinAPI(self.checkin_service, self.player_service)
         self.admin_api = AdminAPI(
             self.player_service,
             self.cultivation_service,
@@ -63,6 +67,8 @@ class XiuxianPlugin(Star):
         logger.info("重生之凡人修仙游戏插件初始化中...")
         # 应用数据库迁移
         await self.migration_manager.apply_migrations()
+        # 加载已注册玩家到内存缓存
+        await self.player_service.load_all_players_to_cache()
         logger.info("重生之凡人修仙游戏插件初始化完成")
 
     async def terminate(self):
@@ -72,15 +78,20 @@ class XiuxianPlugin(Star):
         await self.db_manager.close()
         logger.info("重生之凡人修仙游戏插件已卸载")
 
-    # ==================== 命令注册区域 ====================
+    # ==================== 事件监听区域 ====================
 
-    @filter.command("修仙注册")
-    async def register_player(self, event: AstrMessageEvent):
-        """注册修仙角色"""
+    @filter.event_message_type(filter.EventMessageType.ALL)
+    async def on_message(self, event: AstrMessageEvent):
+        """监听所有消息，自动为未注册用户创建角色"""
         user_id = event.get_sender_id()
-        username = event.get_sender_name()
-        result = await self.player_api.create_player(user_id, username)
-        yield event.plain_result(result)
+        # 检查用户是否已注册，未注册则自动创建
+        player_dict, error = await self.player_service.check_player_registered(user_id)
+        if error and "自动" in error:
+            # 自动注册新用户
+            username = event.get_sender_name()
+            await self.player_service.auto_register_player(user_id, username)
+
+    # ==================== 命令注册区域 ====================
 
     @filter.command("修仙状态")
     async def player_status(self, event: AstrMessageEvent):
@@ -125,18 +136,51 @@ class XiuxianPlugin(Star):
         result = await self.item_api.use_item(user_id, item_name)
         yield event.plain_result(result)
 
+    @filter.command("更改道号")
+    async def change_username(self, event: AstrMessageEvent):
+        """更改道号"""
+        user_id = event.get_sender_id()
+        new_username = event.get_message_str().replace("更改道号", "").strip()
+        result = await self.player_api.change_username(user_id, new_username)
+        yield event.plain_result(result)
+
+    @filter.command("修仙签到")
+    async def checkin(self, event: AstrMessageEvent):
+        """每日签到获取修为奖励"""
+        user_id = event.get_sender_id()
+        result = await self.checkin_api.checkin(user_id)
+        yield event.plain_result(result)
+
+    @filter.command("签到状态")
+    async def checkin_status(self, event: AstrMessageEvent):
+        """查看签到状态和奖励规则"""
+        user_id = event.get_sender_id()
+        result = await self.checkin_api.get_checkin_status(user_id)
+        yield event.plain_result(result)
+
+    @filter.command("签到排行")
+    async def checkin_ranking(self, event: AstrMessageEvent):
+        """查看签到排行榜"""
+        user_id = event.get_sender_id()
+        result = await self.checkin_api.get_checkin_ranking(user_id)
+        yield event.plain_result(result)
+
     @filter.command("修仙帮助")
     async def help_command(self, event: AstrMessageEvent):
         """显示帮助信息"""
         help_text = """
 【修仙游戏帮助】
-修仙注册 - 注册修仙角色
+首次发言自动注册修仙角色
 修仙状态 - 查看角色状态
 修炼 - 进行修炼获取修为
 突破 - 尝试境界突破
 探索 - 探索秘境获取资源
 背包 - 查看背包物品
 使用物品 <名称> - 使用指定物品
+更改道号 <新道号> - 修改角色道号（2-10个中文字符）
+修仙签到 - 每日签到获取修为奖励
+签到状态 - 查看签到状态和奖励规则
+签到排行 - 查看签到排行榜
 修仙帮助 - 显示本帮助
         """
         yield event.plain_result(help_text.strip())
@@ -228,6 +272,20 @@ class XiuxianPlugin(Star):
         # 数据统计API
         self.context.web_app.router.add_get(
             "/api/xiuxian/stats", self.admin_api.get_game_stats
+        )
+
+        # 签到管理API
+        self.context.web_app.router.add_get(
+            "/api/xiuxian/checkin/records", self.checkin_api.api_get_all_records
+        )
+        self.context.web_app.router.add_get(
+            "/api/xiuxian/checkin/ranking", self.checkin_api.api_get_ranking
+        )
+        self.context.web_app.router.add_get(
+            "/api/xiuxian/checkin/{player_id}/status", self.checkin_api.api_get_status
+        )
+        self.context.web_app.router.add_get(
+            "/api/xiuxian/checkin/{player_id}/records", self.checkin_api.api_get_records
         )
 
         logger.info("修仙游戏后台管理API路由已注册")

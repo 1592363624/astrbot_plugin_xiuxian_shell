@@ -46,7 +46,10 @@ class PlayerAPI:
             return (
                 f"注册成功！欢迎 {username} 进入修仙世界！\n"
                 f"当前境界：{realm_name}\n"
-                f"初始灵石：{player.spirit_stone}"
+                f"初始灵石：{player.spirit_stone}\n"
+                f"———先天属性———\n"
+                f"根骨:{player.bone} 神识:{player.spirit} 悟性:{player.intel}\n"
+                f"体魄:{player.str_} 灵觉:{player.percep} 机缘:{player.luck}"
             )
         except ValueError as e:
             return str(e)
@@ -80,9 +83,16 @@ class PlayerAPI:
 境界：{realm_name}
 修为：{player_dict['experience']}
 灵石：{player_dict['spirit_stone']}
-生命：{player_dict['health']}/{player_dict['max_health']}
-攻击：{player_dict['attack']}
-防御：{player_dict['defense']}
+———战斗属性———
+气血：{player_dict['health']}/{player_dict['max_health']}
+法力：{player_dict['mp']}/{player_dict['max_mp']}
+体力：{player_dict['stamina']}/{player_dict['max_stamina']}
+物攻：{player_dict['attack']} 法攻：{player_dict['magic_attack']}
+物防：{player_dict['defense']} 法防：{player_dict['magic_defense']}
+速度：{player_dict['speed']} 闪避：{player_dict['dodge']:.1%}
+———先天属性———
+根骨:{player_dict['bone']} 神识:{player_dict['spirit']} 悟性:{player_dict['intel']}
+体魄:{player_dict['str']} 灵觉:{player_dict['percep']} 机缘:{player_dict['luck']}
         """
         return status.strip()
 
@@ -114,6 +124,22 @@ class PlayerAPI:
         await self.player_service.modify_resource(player_dict["id"], "spirit_stone", stone_gain)
 
         return f"你外出探索，获得 {exp_gain} 修为和 {stone_gain} 灵石"
+
+    async def change_username(self, user_id: str, new_username: str) -> str:
+        """
+        修改道号
+        
+        Args:
+            user_id: 用户ID
+            new_username: 新的道号
+            
+        Returns:
+            str: 结果消息
+        """
+        result, error = await self.player_service.change_username(user_id, new_username)
+        if error:
+            return f"修改失败：{error}"
+        return f"道号修改成功！你的新道号为：{result}"
 
     # ==================== HTTP API接口 ====================
 

@@ -6,5 +6,6 @@ from .player_api import PlayerAPI
 from .item_api import ItemAPI
 from .skill_api import SkillAPI
 from .admin_api import AdminAPI
+from .checkin_api import CheckinAPI
 
-__all__ = ["PlayerAPI", "ItemAPI", "SkillAPI", "AdminAPI"]
+__all__ = ["PlayerAPI", "ItemAPI", "SkillAPI", "AdminAPI", "CheckinAPI"]

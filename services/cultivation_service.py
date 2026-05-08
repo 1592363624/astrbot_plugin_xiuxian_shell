@@ -109,27 +109,45 @@ class CultivationService:
                 "message": f"修为不足，需要 {next_realm.experience_required} 点修为，当前仅有 {player['experience']} 点",
             }
         
-        # 计算突破成功率（可根据境界调整）
-        success_rate = max(0.1, 1.0 - (next_realm.level * 0.05))
+        # 使用数据库中配置的突破概率
+        success_rate = next_realm.breakthrough_probability / 100.0
         
         # 执行突破
         import random
         if random.random() < success_rate:
-            # 突破成功
-            new_health = player["max_health"] + next_realm.health_bonus
-            new_attack = player["attack"] + next_realm.attack_bonus
-            new_defense = player["defense"] + next_realm.defense_bonus
+            # 突破成功，根据新境界和基础属性重新计算战斗属性
+            from ..utils import calc_battle_attrs
+            new_attrs = calc_battle_attrs(
+                next_realm.level,
+                player["bone"],
+                player["spirit"],
+                player["intel"],
+                player["str"],
+                player["percep"],
+                player["luck"],
+            )
             
             await self.db.execute(
                 """UPDATE players 
                 SET realm_id = ?, 
-                    max_health = ?, 
-                    health = ?,
-                    attack = ?, 
-                    defense = ?,
+                    max_health = ?, health = ?,
+                    max_mp = ?, mp = ?,
+                    max_stamina = ?, stamina = ?,
+                    attack = ?, magic_attack = ?,
+                    defense = ?, magic_defense = ?,
+                    speed = ?, dodge = ?,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?""",
-                (next_realm.id, new_health, new_health, new_attack, new_defense, player_id)
+                (
+                    next_realm.id,
+                    new_attrs["max_health"], new_attrs["health"],
+                    new_attrs["max_mp"], new_attrs["mp"],
+                    new_attrs["max_stamina"], new_attrs["stamina"],
+                    new_attrs["attack"], new_attrs["magic_attack"],
+                    new_attrs["defense"], new_attrs["magic_defense"],
+                    new_attrs["speed"], new_attrs["dodge"],
+                    player_id,
+                )
             )
             await self.db.commit()
             
@@ -139,6 +157,7 @@ class CultivationService:
                 "success": True,
                 "old_realm": current_realm.name,
                 "new_realm": next_realm.name,
+                "breakthrough_probability": next_realm.breakthrough_probability,
                 "message": f"恭喜！你成功突破到【{next_realm.name}】！",
             }
         else:
@@ -153,6 +172,7 @@ class CultivationService:
             return {
                 "success": False,
                 "exp_loss": exp_loss,
+                "breakthrough_probability": next_realm.breakthrough_probability,
                 "message": f"突破失败！损失了 {exp_loss} 点修为，继续努力吧",
             }
 
@@ -243,11 +263,20 @@ class CultivationService:
         return [Realm.from_dict(row) for row in rows]
 
     async def create_realm(self, realm_data: Dict[str, Any]) -> Realm:
-        """创建境界"""
+        """
+        创建境界
+        
+        Args:
+            realm_data: 境界数据字典
+            
+        Returns:
+            Realm: 创建的境界对象
+        """
         realm_id = realm_data.get("id", str(uuid.uuid4()))
         sql = """
-            INSERT INTO realms (id, name, description, level, experience_required, health_bonus, attack_bonus, defense_bonus)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO realms (id, name, description, level, experience_required,
+                              breakthrough_probability, event_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         """
         await self.db.execute(sql, (
             realm_id,
@@ -255,16 +284,27 @@ class CultivationService:
             realm_data.get("description"),
             realm_data["level"],
             realm_data["experience_required"],
-            realm_data.get("health_bonus", 0),
-            realm_data.get("attack_bonus", 0),
-            realm_data.get("defense_bonus", 0),
+            realm_data.get("breakthrough_probability", 50),
+            realm_data.get("event_id", 1),
         ))
         await self.db.commit()
         return await self.get_realm_by_id(realm_id)
 
     async def update_realm(self, realm_id: str, **kwargs) -> Optional[Realm]:
-        """更新境界"""
-        allowed_fields = ["name", "description", "level", "experience_required", "health_bonus", "attack_bonus", "defense_bonus"]
+        """
+        更新境界
+        
+        Args:
+            realm_id: 境界ID
+            **kwargs: 要更新的字段
+            
+        Returns:
+            Optional[Realm]: 更新后的境界对象
+        """
+        allowed_fields = [
+            "name", "description", "level", "experience_required",
+            "breakthrough_probability", "event_id"
+        ]
         updates = []
         values = []
         for key, value in kwargs.items():

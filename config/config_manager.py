@@ -26,11 +26,18 @@ class ConfigManager:
             "explore_cooldown": 600,
             "combat_cooldown": 180,
         },
+        "checkin": {
+            "base_reward_rate": 1,
+            "three_day_reward_rate": 2,
+            "seven_day_reward_rate": 3,
+        },
         "player": {
-            "initial_health": 100,
-            "initial_attack": 10,
-            "initial_defense": 5,
             "initial_spirit_stone": 100,
+            "attr_total_points": 35,
+            "attr_min": 3,
+            "attr_max": 15,
+            "luck_min": 1,
+            "luck_max": 10,
         },
         "realms": [
             {"id": "realm_001", "name": "练气期", "level": 1, "exp_required": 100},

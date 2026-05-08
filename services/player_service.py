@@ -9,6 +9,7 @@ from typing import Optional, List, Dict, Any, Tuple, TYPE_CHECKING
 from astrbot.api import logger
 from ..database import DatabaseManager
 from ..models import Player
+from ..utils import allocate_base_attrs, generate_luck, calc_battle_attrs
 
 if TYPE_CHECKING:
     from ..config import ConfigManager
@@ -28,6 +29,8 @@ class PlayerService:
         self.db = db_manager
         self.config_manager = config_manager
         self._register_timestamps: Dict[str, float] = {}
+        # 已注册用户缓存，key为user_id，value为player_dict
+        self._registered_players_cache: Dict[str, Dict[str, Any]] = {}
 
     def _validate_username(self, username: str) -> Optional[str]:
         """
@@ -65,9 +68,117 @@ class PlayerService:
                 return f"注册太频繁，请 {remaining} 秒后再试"
         return None
 
+    async def load_all_players_to_cache(self) -> int:
+        """
+        加载所有已注册玩家到内存缓存
+        在插件启动时调用，避免每次用户发言都查询数据库
+        
+        Returns:
+            int: 加载的玩家数量
+        """
+        try:
+            rows = await self.db.fetch_all(
+                "SELECT id, user_id, username, realm_id, experience, spirit_stone, "
+                "health, max_health, mp, max_mp, stamina, max_stamina, "
+                "attack, magic_attack, defense, magic_defense, speed, dodge, "
+                "bone, spirit, intel, str, percep, luck FROM players"
+            )
+            self._registered_players_cache.clear()
+            for row in rows:
+                self._registered_players_cache[row["user_id"]] = row
+            logger.info(f"已加载 {len(rows)} 个玩家到内存缓存")
+            return len(rows)
+        except Exception as e:
+            logger.error(f"加载玩家缓存失败: {e}")
+            return 0
+
+    async def _create_player_internal(
+        self, user_id: str, username: str
+    ) -> Player:
+        """
+        内部方法：分配属性并插入玩家记录
+
+        随机分配基础属性（根骨/神识/悟性/体魄/灵觉/机缘），
+        以凡人境（level=1）计算初始战斗属性后写入数据库。
+
+        Args:
+            user_id: 用户ID
+            username: 用户名
+
+        Returns:
+            Player: 创建的玩家对象
+        """
+        # 从配置读取属性分配参数，支持后台自定义调整
+        attr_total = self.config_manager.get("player.attr_total_points", 35)
+        attr_min = self.config_manager.get("player.attr_min", 3)
+        attr_max = self.config_manager.get("player.attr_max", 15)
+
+        base_attrs = allocate_base_attrs(attr_total, attr_min, attr_max)
+        luck = generate_luck()
+
+        battle_attrs = calc_battle_attrs(
+            level=1,
+            bone=base_attrs["bone"],
+            spirit=base_attrs["spirit"],
+            intel=base_attrs["intel"],
+            str_=base_attrs["str"],
+            percep=base_attrs["percep"],
+            luck=luck,
+        )
+
+        player_id = str(uuid.uuid4())
+        sql = """
+            INSERT INTO players (
+                id, user_id, username,
+                bone, spirit, intel, str, percep, luck,
+                health, max_health, mp, max_mp, stamina, max_stamina,
+                attack, magic_attack, defense, magic_defense, speed, dodge
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        await self.db.execute(sql, (
+            player_id, user_id, username,
+            base_attrs["bone"], base_attrs["spirit"], base_attrs["intel"],
+            base_attrs["str"], base_attrs["percep"], luck,
+            battle_attrs["health"], battle_attrs["max_health"],
+            battle_attrs["mp"], battle_attrs["max_mp"],
+            battle_attrs["stamina"], battle_attrs["max_stamina"],
+            battle_attrs["attack"], battle_attrs["magic_attack"],
+            battle_attrs["defense"], battle_attrs["magic_defense"],
+            battle_attrs["speed"], battle_attrs["dodge"],
+        ))
+        await self.db.commit()
+
+        return await self.get_player_by_id(player_id)
+
+    async def auto_register_player(self, user_id: str, username: str = None) -> Dict[str, Any]:
+        """
+        自动注册玩家（用户发言时自动调用）
+        使用平台获取的ID作为用户名，如果未提供username则使用user_id
+        注册时随机分配基础属性并计算战斗属性
+
+        Args:
+            user_id: 用户ID
+            username: 用户名（可选，默认使用user_id）
+
+        Returns:
+            Dict[str, Any]: 注册成功的玩家信息
+        """
+        if not username:
+            username = user_id
+
+        player = await self._create_player_internal(user_id, username)
+        if player:
+            player_dict = player.to_dict()
+            self._registered_players_cache[user_id] = player_dict
+            logger.info(f"自动注册新玩家: {username} ({user_id})")
+            return player_dict
+
+        return {}
+
     async def check_player_registered(self, user_id: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         """
         统一检查玩家是否已注册的公共方法
+        优先从内存缓存查询，缓存未命中再查询数据库
         
         Args:
             user_id: 用户ID
@@ -75,15 +186,26 @@ class PlayerService:
         Returns:
             Tuple[Optional[Dict], Optional[str]]: 
                 - 已注册: (player_dict, None)
-                - 未注册: (None, "你还没有注册修仙角色，请先使用【修仙注册】")
+                - 未注册: (None, error_message)
         """
+        # 先从内存缓存查询
+        if user_id in self._registered_players_cache:
+            return self._registered_players_cache[user_id], None
+        
+        # 缓存未命中，查询数据库
         player = await self.db.fetch_one(
-            "SELECT id, username, realm_id, experience, spirit_stone, health, max_health, attack, defense "
+            "SELECT id, username, realm_id, experience, spirit_stone, "
+            "health, max_health, mp, max_mp, stamina, max_stamina, "
+            "attack, magic_attack, defense, magic_defense, speed, dodge, "
+            "bone, spirit, intel, str, percep, luck "
             "FROM players WHERE user_id = ?",
             (user_id,)
         )
         if not player:
-            return None, "你还没有注册修仙角色，请先使用【修仙注册】"
+            return None, "你还没有修仙角色，系统将自动为你创建..."
+        
+        # 更新缓存
+        self._registered_players_cache[user_id] = player
         return player, None
 
     async def create_player(self, user_id: str, username: str) -> Player:
@@ -117,13 +239,7 @@ class PlayerService:
         if existing:
             raise ValueError("玩家已存在")
 
-        player_id = str(uuid.uuid4())
-        sql = """
-            INSERT INTO players (id, user_id, username)
-            VALUES (?, ?, ?)
-        """
-        await self.db.execute(sql, (player_id, user_id, username))
-        await self.db.commit()
+        player = await self._create_player_internal(user_id, username)
 
         # 记录注册时间，用于频率限制
         self._register_timestamps[user_id] = time.time()
@@ -206,7 +322,9 @@ class PlayerService:
         """
         allowed_fields = [
             "username", "realm_id", "experience", "spirit_stone",
-            "health", "max_health", "attack", "defense"
+            "health", "max_health", "mp", "max_mp", "stamina", "max_stamina",
+            "attack", "magic_attack", "defense", "magic_defense", "speed", "dodge",
+            "bone", "spirit", "intel", "str", "percep", "luck",
         ]
         updates = []
         values = []
@@ -257,7 +375,12 @@ class PlayerService:
         Returns:
             Optional[Player]: 更新后的玩家对象
         """
-        allowed_fields = ["experience", "spirit_stone", "health", "attack", "defense"]
+        allowed_fields = [
+            "experience", "spirit_stone",
+            "health", "max_health", "mp", "max_mp", "stamina", "max_stamina",
+            "attack", "magic_attack", "defense", "magic_defense", "speed",
+            "bone", "spirit", "intel", "str", "percep", "luck",
+        ]
         if field not in allowed_fields:
             raise ValueError(f"不允许修改字段: {field}")
         
@@ -270,3 +393,50 @@ class PlayerService:
         await self.db.commit()
         
         return await self.get_player_by_id(player_id)
+
+    async def change_username(self, user_id: str, new_username: str) -> Tuple[Optional[str], Optional[str]]:
+        """
+        修改玩家道号
+        
+        Args:
+            user_id: 用户ID
+            new_username: 新的道号
+            
+        Returns:
+            Tuple[Optional[str], Optional[str]]: 
+                - 成功: (new_username, None)
+                - 失败: (None, error_message)
+        """
+        # 校验新道号合法性
+        name_error = self._validate_username(new_username)
+        if name_error:
+            return None, name_error
+
+        # 检查玩家是否存在
+        player = await self.get_player_by_user_id(user_id)
+        if not player:
+            return None, "你还没有修仙角色"
+
+        # 检查新道号是否与其他玩家重复
+        existing = await self.db.fetch_one(
+            "SELECT id FROM players WHERE username = ? AND user_id != ?",
+            (new_username, user_id)
+        )
+        if existing:
+            return None, "该道号已被其他修士使用，请换一个"
+
+        # 更新数据库
+        sql = """
+            UPDATE players 
+            SET username = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = ?
+        """
+        await self.db.execute(sql, (new_username, user_id))
+        await self.db.commit()
+
+        # 更新内存缓存
+        if user_id in self._registered_players_cache:
+            self._registered_players_cache[user_id]["username"] = new_username
+
+        logger.info(f"玩家 {user_id} 修改道号: {player.username} -> {new_username}")
+        return new_username, None
