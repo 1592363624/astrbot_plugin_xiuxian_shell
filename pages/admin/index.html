@@ -1,0 +1,1492 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>修仙后台管理</title>
+<style>
+:root {
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #12121a;
+  --bg-card: #1a1a2e;
+  --bg-input: #16162a;
+  --border-color: #2a2a4a;
+  --border-gold: #c9a84c;
+  --text-primary: #e8e6e3;
+  --text-secondary: #8a8a9a;
+  --text-gold: #d4a843;
+  --text-gold-light: #f0d68a;
+  --accent-gold: #c9a84c;
+  --accent-red: #e74c3c;
+  --accent-green: #2ecc71;
+  --accent-blue: #3498db;
+  --accent-purple: #9b59b6;
+  --accent-orange: #e67e22;
+  --shadow-gold: rgba(201, 168, 76, 0.15);
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --transition: all 0.25s ease;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow: hidden;
+}
+.app-container { display: flex; height: 100vh; }
+
+.sidebar {
+  width: 220px;
+  min-width: 220px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sidebar-header {
+  padding: 20px 16px;
+  border-bottom: 1px solid var(--border-color);
+  text-align: center;
+}
+.sidebar-header h1 {
+  font-size: 18px;
+  color: var(--text-gold);
+  font-weight: 600;
+  letter-spacing: 2px;
+}
+.sidebar-header p {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+.sidebar-nav {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+.sidebar-nav::-webkit-scrollbar { width: 3px; }
+.sidebar-nav::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+.nav-group { margin-bottom: 4px; }
+.nav-group-title {
+  font-size: 10px;
+  color: var(--text-secondary);
+  padding: 8px 16px 4px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: var(--transition);
+  color: var(--text-secondary);
+  font-size: 13px;
+  border-left: 3px solid transparent;
+  gap: 10px;
+}
+.nav-item:hover {
+  background: rgba(201, 168, 76, 0.08);
+  color: var(--text-primary);
+}
+.nav-item.active {
+  background: rgba(201, 168, 76, 0.12);
+  color: var(--text-gold);
+  border-left-color: var(--accent-gold);
+}
+.nav-item .icon { font-size: 16px; width: 20px; text-align: center; }
+
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.top-bar {
+  height: 50px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+}
+.top-bar h2 {
+  font-size: 15px;
+  color: var(--text-gold);
+  font-weight: 500;
+}
+.top-bar-actions { display: flex; gap: 8px; align-items: center; }
+.content-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+}
+.content-area::-webkit-scrollbar { width: 6px; }
+.content-area::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+
+.btn {
+  padding: 7px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: var(--transition);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.btn:hover { border-color: var(--accent-gold); color: var(--text-gold); }
+.btn-primary {
+  background: linear-gradient(135deg, #c9a84c, #a88a3a);
+  border-color: var(--accent-gold);
+  color: #0a0a0f;
+  font-weight: 500;
+}
+.btn-primary:hover { background: linear-gradient(135deg, #d4b55a, #b89a4a); color: #0a0a0f; }
+.btn-danger { border-color: var(--accent-red); color: var(--accent-red); }
+.btn-danger:hover { background: rgba(231, 76, 60, 0.15); }
+.btn-sm { padding: 4px 10px; font-size: 11px; }
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.card-title {
+  font-size: 14px;
+  color: var(--text-gold);
+  font-weight: 500;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  transition: var(--transition);
+}
+.stat-card:hover { border-color: var(--accent-gold); box-shadow: 0 0 12px var(--shadow-gold); }
+.stat-card .label { font-size: 11px; color: var(--text-secondary); margin-bottom: 6px; }
+.stat-card .value { font-size: 24px; color: var(--text-gold); font-weight: 600; }
+.stat-card .sub { font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
+
+.table-wrapper { overflow-x: auto; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+th {
+  background: var(--bg-secondary);
+  color: var(--text-gold);
+  font-weight: 500;
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+td {
+  padding: 9px 12px;
+  border-bottom: 1px solid rgba(42, 42, 74, 0.5);
+  color: var(--text-primary);
+}
+tr:hover td { background: rgba(201, 168, 76, 0.04); }
+
+.form-group { margin-bottom: 14px; }
+.form-label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 5px;
+}
+.form-input, .form-select, .form-textarea {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 13px;
+  transition: var(--transition);
+  outline: none;
+}
+.form-input:focus, .form-select:focus, .form-textarea:focus {
+  border-color: var(--accent-gold);
+  box-shadow: 0 0 0 2px var(--shadow-gold);
+}
+.form-textarea { min-height: 80px; resize: vertical; }
+.form-select { cursor: pointer; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  opacity: 0;
+  visibility: hidden;
+  transition: var(--transition);
+}
+.modal-overlay.active { opacity: 1; visibility: visible; }
+.modal {
+  background: var(--bg-card);
+  border: 1px solid var(--border-gold);
+  border-radius: var(--radius-lg);
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 20px var(--shadow-gold);
+}
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+.modal-header h3 { font-size: 15px; color: var(--text-gold); }
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 4px;
+}
+.modal-close:hover { color: var(--accent-red); }
+.modal-body { padding: 20px; }
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border-color);
+}
+
+.search-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  align-items: center;
+}
+.search-bar .form-input { max-width: 300px; }
+
+.tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.tag-common { background: rgba(149, 165, 166, 0.2); color: #95a5a6; }
+.tag-uncommon { background: rgba(46, 204, 113, 0.2); color: #2ecc71; }
+.tag-rare { background: rgba(52, 152, 219, 0.2); color: #3498db; }
+.tag-epic { background: rgba(155, 89, 182, 0.2); color: #9b59b6; }
+.tag-legendary { background: rgba(230, 126, 34, 0.2); color: #e67e22; }
+.tag-gold { background: rgba(201, 168, 76, 0.2); color: var(--text-gold); }
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  margin-top: 16px;
+}
+.pagination .btn { min-width: 32px; justify-content: center; padding: 5px 8px; }
+.pagination .page-info { font-size: 12px; color: var(--text-secondary); margin: 0 8px; }
+
+.toast-container {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.toast {
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  animation: slideIn 0.3s ease;
+  min-width: 200px;
+  border: 1px solid;
+}
+.toast-success { background: rgba(46, 204, 113, 0.15); border-color: var(--accent-green); color: var(--accent-green); }
+.toast-error { background: rgba(231, 76, 60, 0.15); border-color: var(--accent-red); color: var(--accent-red); }
+.toast-info { background: rgba(52, 152, 219, 0.15); border-color: var(--accent-blue); color: var(--accent-blue); }
+@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+.empty-state {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-secondary);
+}
+.empty-state .icon { font-size: 40px; margin-bottom: 12px; }
+.empty-state p { font-size: 13px; }
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  color: var(--text-secondary);
+}
+.spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--accent-gold);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-right: 8px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.config-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+.config-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: rgba(201, 168, 76, 0.06);
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.config-section-header:hover { background: rgba(201, 168, 76, 0.1); }
+.config-section-header h4 { font-size: 13px; color: var(--text-gold); }
+.config-section-body {
+  padding: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+.config-field {
+  background: rgba(0,0,0,0.15);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+}
+.config-field .field-key {
+  font-size: 12px;
+  color: var(--text-gold-light);
+  margin-bottom: 4px;
+  font-family: 'Consolas', monospace;
+}
+.config-field .field-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+.config-field .form-input {
+  width: 100%;
+  max-width: none;
+}
+.config-field .switch {
+  /* 开关保持固定宽度，不拉伸 */
+}
+
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 20px;
+}
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch .slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: var(--border-color);
+  border-radius: 20px;
+  transition: var(--transition);
+}
+.switch .slider:before {
+  content: '';
+  position: absolute;
+  height: 16px;
+  width: 16px;
+  left: 2px;
+  bottom: 2px;
+  background: var(--text-primary);
+  border-radius: 50%;
+  transition: var(--transition);
+}
+.switch input:checked + .slider { background: var(--accent-gold); }
+.switch input:checked + .slider:before { transform: translateX(20px); background: #0a0a0f; }
+
+.realm-chart { display: flex; flex-direction: column; gap: 6px; }
+.realm-bar { display: flex; align-items: center; gap: 8px; }
+.realm-bar .name { width: 80px; font-size: 12px; color: var(--text-secondary); text-align: right; }
+.realm-bar .bar { flex: 1; height: 20px; background: var(--bg-secondary); border-radius: 3px; overflow: hidden; }
+.realm-bar .bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent-gold), #a88a3a); border-radius: 3px; transition: width 0.5s ease; }
+.realm-bar .count { width: 40px; font-size: 12px; color: var(--text-gold); }
+
+.template-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  margin-bottom: 8px;
+}
+.template-card h5 { font-size: 13px; color: var(--text-gold); margin-bottom: 4px; }
+.template-card p { font-size: 11px; color: var(--text-secondary); }
+
+.debug-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+  padding: 6px 16px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  display: flex;
+  gap: 16px;
+  z-index: 999;
+}
+.debug-bar .ok { color: var(--accent-green); }
+.debug-bar .err { color: var(--accent-red); }
+.debug-bar .warn { color: var(--accent-orange); }
+
+@media (max-width: 768px) {
+  .sidebar { width: 60px; min-width: 60px; }
+  .sidebar-header h1, .sidebar-header p, .nav-item span, .nav-group-title { display: none; }
+  .nav-item { justify-content: center; padding: 12px; }
+  .nav-item .icon { font-size: 18px; }
+  .stats-grid { grid-template-columns: 1fr 1fr; }
+  .form-row { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="app-container">
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h1>修仙管理</h1>
+      <p>Xiuxian Admin</p>
+    </div>
+    <nav class="sidebar-nav" id="sidebarNav"></nav>
+  </aside>
+  <div class="main-content">
+    <div class="top-bar">
+      <h2 id="pageTitle">仪表盘</h2>
+      <div class="top-bar-actions" id="topBarActions"></div>
+    </div>
+    <div class="content-area" id="contentArea">
+      <div class="loading"><div class="spinner"></div>初始化中...</div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modalTitle">编辑</h3>
+      <button class="modal-close" onclick="App.closeModal()">&times;</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-footer" id="modalFooter"></div>
+  </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+<div class="debug-bar" id="debugBar"></div>
+
+<script>
+/**
+ * 修仙后台管理系统
+ * 模块化架构，每个管理模块通过ModuleRegistry注册
+ * 新增模块只需调用 ModuleRegistry.register() 即可
+ */
+
+/* ===== 调试输出 ===== */
+const DebugLog = {
+  _logs: [],
+  log(msg) { this._logs.push({t: Date.now(), m: msg, l: 'info'}); console.log('[Admin]', msg); this._render(); },
+  warn(msg) { this._logs.push({t: Date.now(), m: msg, l: 'warn'}); console.warn('[Admin]', msg); this._render(); },
+  error(msg) { this._logs.push({t: Date.now(), m: msg, l: 'error'}); console.error('[Admin]', msg); this._render(); },
+  _render() {
+    const bar = document.getElementById('debugBar');
+    if (!bar) return;
+    const last = this._logs[this._logs.length - 1];
+    if (!last) return;
+    const cls = {info:'ok', warn:'warn', error:'err'}[last.l];
+    bar.innerHTML = `<span class="${cls}">${new Date(last.t).toLocaleTimeString()} ${last.m}</span>`;
+  }
+};
+
+/* ===== 工具函数 ===== */
+const Utils = {
+  escapeHtml: (str) => {
+    if (str === null || str === undefined) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  },
+  formatDate: (d) => d ? new Date(d).toLocaleString('zh-CN') : '-',
+  debounce: (fn, ms = 300) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; },
+  rarityTag: (r) => `<span class="tag tag-${r}">${{common:'普通',uncommon:'优秀',rare:'稀有',epic:'史诗',legendary:'传说'}[r]||r}</span>`,
+  itemTypeLabel: (t) => ({consumable:'消耗品',equipment:'装备',material:'材料',currency:'货币'}[t]||t),
+  skillTypeLabel: (t) => ({cultivation:'修炼',combat:'战斗',passive:'被动'}[t]||t),
+  eventTypeLabel: (t) => ({explore:'探索',combat:'战斗',random:'随机',quest:'任务'}[t]||t),
+};
+
+/* ===== API通信层 ===== */
+const Api = {
+  _token: localStorage.getItem('xiuxian_admin_token') || '',
+
+  init() {
+    DebugLog.log('Api.init 开始');
+    if (this._token) {
+      DebugLog.log('已存在本地token');
+    }
+  },
+
+  setToken(token) {
+    this._token = token;
+    localStorage.setItem('xiuxian_admin_token', token);
+  },
+
+  clearToken() {
+    this._token = '';
+    localStorage.removeItem('xiuxian_admin_token');
+  },
+
+  async login(username, password) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+      const resp = await fetch('/api/xiuxian/auth/login', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({username, password}),
+        signal: controller.signal,
+        credentials: 'include'
+      });
+      clearTimeout(timer);
+      if (!resp.ok) return { code: -1, message: 'HTTP ' + resp.status };
+      const data = await resp.json();
+      if (data.code === 0 && data.data && data.data.token) {
+        this.setToken(data.data.token);
+        return { code: 0, data: data.data };
+      }
+      return { code: data.code || -1, message: data.message || '登录失败' };
+    } catch(e) {
+      clearTimeout(timer);
+      return { code: -1, message: e.name === 'AbortError' ? '请求超时' : e.message };
+    }
+  },
+
+  _getHeaders() {
+    const headers = {'Content-Type':'application/json'};
+    if (this._token) headers['Authorization'] = 'Bearer ' + this._token;
+    return headers;
+  },
+
+  async _fetchGet(path, params) {
+    const qs = new URLSearchParams(params).toString();
+    const url = '/' + path + (qs ? '?' + qs : '');
+    DebugLog.log('GET ' + url + ' token=' + (this._token ? '有' : '无'));
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+      const resp = await fetch(url, { signal: controller.signal, credentials: 'include', headers: this._getHeaders() });
+      clearTimeout(timer);
+      DebugLog.log('GET ' + url + ' status=' + resp.status);
+      if (resp.status === 401) {
+        return { code: 401, message: '未登录或登录已过期' };
+      }
+      if (!resp.ok) return { code: -1, message: 'HTTP ' + resp.status };
+      return await resp.json();
+    } catch(e) {
+      clearTimeout(timer);
+      return { code: -1, message: e.name === 'AbortError' ? '请求超时' : e.message };
+    }
+  },
+
+  async _fetchPost(path, body) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+      const resp = await fetch('/' + path, {
+        method: 'POST',
+        headers: this._getHeaders(),
+        body: JSON.stringify(body),
+        signal: controller.signal,
+        credentials: 'include'
+      });
+      clearTimeout(timer);
+      if (resp.status === 401) {
+        return { code: 401, message: '未登录或登录已过期' };
+      }
+      if (!resp.ok) return { code: -1, message: 'HTTP ' + resp.status };
+      return await resp.json();
+    } catch(e) {
+      clearTimeout(timer);
+      return { code: -1, message: e.name === 'AbortError' ? '请求超时' : e.message };
+    }
+  },
+
+  async get(path, params = {}) {
+    return this._fetchGet(path, params);
+  },
+
+  async post(path, body = {}) {
+    return this._fetchPost(path, body);
+  },
+
+  async put(path, body = {}) {
+    return this.post(path, body);
+  },
+
+  async del(path) {
+    return this.post(path + '/delete', {});
+  },
+
+  async changePassword(oldPassword, newPassword) {
+    return this.post('api/xiuxian/auth/change-password', { old_password: oldPassword, new_password: newPassword });
+  },
+};
+
+/* ===== Toast通知 ===== */
+const Toast = {
+  show(msg, type = 'info', duration = 3000) {
+    const c = document.getElementById('toastContainer');
+    const el = document.createElement('div');
+    el.className = `toast toast-${type}`;
+    el.textContent = msg;
+    c.appendChild(el);
+    setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, duration);
+  },
+  success(msg) { this.show(msg, 'success'); },
+  error(msg) { this.show(msg, 'error'); },
+  info(msg) { this.show(msg, 'info'); },
+};
+
+/* ===== 模态框 ===== */
+const Modal = {
+  open(title, bodyHtml, footerHtml) {
+    document.getElementById('modalTitle').textContent = title;
+    document.getElementById('modalBody').innerHTML = bodyHtml;
+    document.getElementById('modalFooter').innerHTML = footerHtml;
+    document.getElementById('modalOverlay').classList.add('active');
+  },
+  close() {
+    document.getElementById('modalOverlay').classList.remove('active');
+  },
+};
+
+/* ===== 模块注册中心 ===== */
+const ModuleRegistry = {
+  _modules: {},
+  register(module) {
+    if (!module.id || !module.name) throw new Error('模块必须包含id和name');
+    // 保留模块所有自定义属性（如 _config、_descriptions 等），同时确保核心字段存在
+    this._modules[module.id] = Object.assign({}, module, {
+      icon: module.icon || '📋',
+      group: module.group || '其他',
+      render: module.render || (() => ''),
+      init: module.init || (async () => {}),
+      refresh: module.refresh || null,
+    });
+  },
+  getAll() { return Object.values(this._modules); },
+  get(id) { return this._modules[id]; },
+  getGroups() {
+    const groups = {};
+    for (const m of this.getAll()) {
+      if (!groups[m.group]) groups[m.group] = [];
+      groups[m.group].push(m);
+    }
+    return groups;
+  },
+};
+
+/* ===== 通用CRUD模块工厂 ===== */
+function createCrudModule(config) {
+  const { id, name, icon, group, apiPath, columns, formFields, idField = 'id', itemName = name } = config;
+  let _data = [];
+  let _page = 1;
+  let _pageSize = 20;
+  let _total = 0;
+  let _searchKey = '';
+
+  async function fetchData() {
+    const params = { page: _page, page_size: _pageSize };
+    if (_searchKey) params.search = _searchKey;
+    const res = await Api.get(apiPath, params);
+    if (res.code === 0) {
+      const d = res.data;
+      if (Array.isArray(d)) { _data = d; _total = d.length; }
+      else if (d && (d.items || d.list || d.records || d.players)) {
+        _data = d.items || d.list || d.records || d.players;
+        _total = d.total || _data.length;
+      } else if (d && typeof d === 'object') { _data = [d]; _total = 1; }
+      else { _data = []; _total = 0; }
+    } else {
+      _data = []; _total = 0;
+      if (res.code === 401) {
+        throw new Error(res.message || '未登录或登录已过期');
+      }
+      if (res.code !== 0 && res.message) DebugLog.warn(name + ' 加载失败: ' + res.message);
+    }
+  }
+
+  async function createItem(data) {
+    const res = await Api.post(apiPath, data);
+    if (res.code === 0) { Toast.success(itemName + '创建成功'); await fetchData(); return true; }
+    Toast.error(res.message || '创建失败'); return false;
+  }
+
+  async function updateItem(itemId, data) {
+    const res = await Api.put(apiPath + '/' + itemId, data);
+    if (res.code === 0) { Toast.success(itemName + '更新成功'); await fetchData(); return true; }
+    Toast.error(res.message || '更新失败'); return false;
+  }
+
+  async function deleteItem(itemId) {
+    if (!confirm('确定删除该' + itemName + '吗？此操作不可恢复。')) return false;
+    const res = await Api.del(apiPath + '/' + itemId);
+    if (res.code === 0) { Toast.success(itemName + '删除成功'); await fetchData(); return true; }
+    Toast.error(res.message || '删除失败'); return false;
+  }
+
+  function renderTable() {
+    if (!_data.length) return '<div class="empty-state"><div class="icon">📭</div><p>暂无数据</p></div>';
+    let html = '<div class="table-wrapper"><table><thead><tr>';
+    columns.forEach(col => { html += '<th>' + col.label + '</th>'; });
+    html += '<th style="width:120px">操作</th></tr></thead><tbody>';
+    _data.forEach(row => {
+      html += '<tr>';
+      columns.forEach(col => {
+        let val = row[col.key];
+        if (col.render) val = col.render(val, row);
+        else if (val === null || val === undefined) val = '-';
+        else if (typeof val === 'boolean') val = val ? '✅' : '❌';
+        html += '<td>' + val + '</td>';
+      });
+      html += '<td><button class="btn btn-sm" onclick="ModuleRegistry.get(\'' + id + '\')._editItem(\'' + Utils.escapeHtml(String(row[idField])) + '\')">编辑</button> <button class="btn btn-sm btn-danger" onclick="ModuleRegistry.get(\'' + id + '\')._deleteItem(\'' + Utils.escapeHtml(String(row[idField])) + '\')">删除</button></td></tr>';
+    });
+    html += '</tbody></table></div>';
+    if (_total > _pageSize) {
+      const totalPages = Math.ceil(_total / _pageSize);
+      html += '<div class="pagination"><button class="btn btn-sm" ' + (_page<=1?'disabled':'') + ' onclick="ModuleRegistry.get(\'' + id + '\')._goPage(' + (_page-1) + ')">上一页</button><span class="page-info">' + _page + ' / ' + totalPages + '</span><button class="btn btn-sm" ' + (_page>=totalPages?'disabled':'') + ' onclick="ModuleRegistry.get(\'' + id + '\')._goPage(' + (_page+1) + ')">下一页</button></div>';
+    }
+    return html;
+  }
+
+  function renderForm(data = {}) {
+    let html = '';
+    formFields.forEach(field => {
+      const val = data[field.key] !== undefined ? data[field.key] : (field.default || '');
+      html += '<div class="form-group">';
+      html += '<label class="form-label">' + field.label + (field.required ? ' *' : '') + '</label>';
+      if (field.type === 'select') {
+        html += '<select class="form-select" name="' + field.key + '">';
+        (field.options || []).forEach(opt => {
+          const optVal = typeof opt === 'object' ? opt.value : opt;
+          const optLabel = typeof opt === 'object' ? opt.label : opt;
+          html += '<option value="' + optVal + '" ' + (val == optVal ? 'selected' : '') + '>' + optLabel + '</option>';
+        });
+        html += '</select>';
+      } else if (field.type === 'textarea') {
+        html += '<textarea class="form-textarea" name="' + field.key + '" ' + (field.required?'required':'') + '>' + Utils.escapeHtml(val) + '</textarea>';
+      } else if (field.type === 'switch') {
+        html += '<label class="switch"><input type="checkbox" name="' + field.key + '" ' + (val ? 'checked' : '') + '><span class="slider"></span></label>';
+      } else {
+        html += '<input class="form-input" type="' + (field.type||'text') + '" name="' + field.key + '" value="' + Utils.escapeHtml(String(val)) + '" ' + (field.required?'required':'') + ' ' + (field.step?'step="'+field.step+'"':'') + ' ' + (field.min!==undefined?'min="'+field.min+'"':'') + ' ' + (field.max!==undefined?'max="'+field.max+'"':'') + '>';
+      }
+      if (field.hint) html += '<div style="font-size:11px;color:var(--text-secondary);margin-top:2px">' + field.hint + '</div>';
+      html += '</div>';
+    });
+    return html;
+  }
+
+  function getFormData() {
+    const data = {};
+    formFields.forEach(field => {
+      const el = document.querySelector('.modal [name="' + field.key + '"]');
+      if (!el) return;
+      if (field.type === 'switch') data[field.key] = el.checked;
+      else if (field.type === 'number') data[field.key] = Number(el.value);
+      else data[field.key] = el.value;
+    });
+    return data;
+  }
+
+  const module = {
+    id, name, icon, group,
+    async init() { await fetchData(); },
+    async refresh() { await fetchData(); this._renderContent(); },
+    render() {
+      return '<div class="search-bar"><input class="form-input" placeholder="搜索' + itemName + '..." id="search_' + id + '" oninput="ModuleRegistry.get(\'' + id + '\')._onSearch(this.value)"><button class="btn btn-primary" onclick="ModuleRegistry.get(\'' + id + '\')._showCreate()">+ 新增' + itemName + '</button></div><div id="table_' + id + '">' + renderTable() + '</div>';
+    },
+    _renderContent() {
+      const el = document.getElementById('table_' + id);
+      if (el) el.innerHTML = renderTable();
+    },
+    _onSearch: Utils.debounce(async (key) => { _searchKey = key; _page = 1; await fetchData(); module._renderContent(); }, 400),
+    async _goPage(p) { _page = p; await fetchData(); module._renderContent(); },
+    _showCreate() {
+      Modal.open('新增' + itemName, renderForm(), '<button class="btn" onclick="App.closeModal()">取消</button><button class="btn btn-primary" onclick="ModuleRegistry.get(\'' + id + '\')._doCreate()">创建</button>');
+    },
+    async _editItem(itemId) {
+      const item = _data.find(r => String(r[idField]) === String(itemId));
+      if (!item) { Toast.error('未找到数据'); return; }
+      Modal.open('编辑' + itemName, renderForm(item), '<button class="btn" onclick="App.closeModal()">取消</button><button class="btn btn-primary" onclick="ModuleRegistry.get(\'' + id + '\')._doUpdate(\'' + itemId + '\')">保存</button>');
+    },
+    async _doCreate() { const data = getFormData(); await createItem(data); App.closeModal(); module._renderContent(); },
+    async _doUpdate(itemId) { const data = getFormData(); await updateItem(itemId, data); App.closeModal(); module._renderContent(); },
+    async _deleteItem(itemId) { await deleteItem(itemId); module._renderContent(); },
+  };
+  return module;
+}
+
+/* ===== 仪表盘模块 ===== */
+ModuleRegistry.register({
+  id: 'dashboard',
+  name: '仪表盘',
+  icon: '📊',
+  group: '概览',
+  _stats: null,
+  _realms: null,
+  async init() { await this.refresh(); },
+  async refresh() {
+    const [statsRes, realmsRes] = await Promise.all([
+      Api.get('api/xiuxian/stats'),
+      Api.get('api/xiuxian/realms'),
+    ]);
+    if (statsRes.code === 401 || realmsRes.code === 401) {
+      throw new Error('未登录或登录已过期');
+    }
+    this._stats = statsRes;
+    this._realms = realmsRes;
+  },
+  render() {
+    const stats = this._stats?.data || {};
+    const realms = this._realms?.data || [];
+    const realmDist = stats.realm_distribution || [];
+    const maxCount = Math.max(...realmDist.map(r => r.count), 1);
+
+    let html = '<div class="stats-grid">';
+    html += '<div class="stat-card"><div class="label">总玩家数</div><div class="value">' + (stats.player_count || 0) + '</div><div class="sub">已注册修仙者</div></div>';
+    html += '<div class="stat-card"><div class="label">境界数量</div><div class="value">' + (Array.isArray(realms) ? realms.length : 0) + '</div><div class="sub">修仙境界层级</div></div>';
+    html += '<div class="stat-card"><div class="label">灵石总量</div><div class="value">' + ((stats.total_spirit_stones || 0).toLocaleString()) + '</div><div class="sub">修仙界流通灵石</div></div>';
+    html += '</div>';
+
+    html += '<div class="card"><div class="card-header"><span class="card-title">境界分布</span></div><div class="realm-chart">';
+    if (realmDist.length) {
+      realmDist.forEach(r => {
+        const pct = (r.count / maxCount * 100).toFixed(1);
+        html += '<div class="realm-bar"><span class="name">' + Utils.escapeHtml(r.name) + '</span><div class="bar"><div class="bar-fill" style="width:' + pct + '%"></div></div><span class="count">' + r.count + '</span></div>';
+      });
+    } else {
+      html += '<div class="empty-state"><p>暂无境界分布数据</p></div>';
+    }
+    html += '</div></div>';
+
+    html += '<div class="card"><div class="card-header"><span class="card-title">境界列表</span></div><div class="table-wrapper"><table><thead><tr><th>ID</th><th>名称</th><th>等级</th><th>所需修为</th><th>突破概率</th></tr></thead><tbody>';
+    if (Array.isArray(realms) && realms.length) {
+      realms.forEach(r => {
+        html += '<tr><td>' + Utils.escapeHtml(r.id) + '</td><td>' + Utils.escapeHtml(r.name) + '</td><td>' + (r.level||'-') + '</td><td>' + ((r.experience_required||0).toLocaleString()) + '</td><td>' + (r.breakthrough_probability||50) + '%</td></tr>';
+      });
+    } else {
+      html += '<tr><td colspan="5" style="text-align:center;color:var(--text-secondary)">暂无境界数据</td></tr>';
+    }
+    html += '</tbody></table></div></div>';
+
+    return html;
+  },
+});
+
+/* ===== 玩家管理模块 ===== */
+ModuleRegistry.register(createCrudModule({
+  id: 'players', name: '玩家管理', icon: '👤', group: '数据管理',
+  apiPath: 'api/xiuxian/players', idField: 'id', itemName: '玩家',
+  columns: [
+    { key: 'user_id', label: '用户ID' },
+    { key: 'username', label: '道号' },
+    { key: 'realm_id', label: '境界' },
+    { key: 'experience', label: '修为', render: v => Number(v||0).toLocaleString() },
+    { key: 'spirit_stone', label: '灵石', render: v => Number(v||0).toLocaleString() },
+    { key: 'health', label: '气血' },
+    { key: 'created_at', label: '创建时间', render: v => Utils.formatDate(v) },
+  ],
+  formFields: [
+    { key: 'username', label: '道号', required: true },
+    { key: 'realm_id', label: '境界ID', required: true },
+    { key: 'experience', label: '修为', type: 'number', default: 0 },
+    { key: 'spirit_stone', label: '灵石', type: 'number', default: 100 },
+    { key: 'bone', label: '根骨', type: 'number', default: 0 },
+    { key: 'spirit', label: '神识', type: 'number', default: 0 },
+    { key: 'intel', label: '悟性', type: 'number', default: 0 },
+    { key: 'str', label: '体魄', type: 'number', default: 0 },
+    { key: 'percep', label: '灵觉', type: 'number', default: 0 },
+    { key: 'luck', label: '机缘', type: 'number', default: 0 },
+    { key: 'health', label: '气血', type: 'number', default: 100 },
+    { key: 'mp', label: '法力', type: 'number', default: 50 },
+    { key: 'stamina', label: '体力', type: 'number', default: 50 },
+  ],
+}));
+
+/* ===== 境界管理模块 ===== */
+ModuleRegistry.register(createCrudModule({
+  id: 'realms', name: '境界管理', icon: '🏔️', group: '数据管理',
+  apiPath: 'api/xiuxian/realms', idField: 'id', itemName: '境界',
+  columns: [
+    { key: 'id', label: 'ID' },
+    { key: 'name', label: '名称' },
+    { key: 'description', label: '描述', render: v => v ? (v.length > 20 ? v.substring(0,20)+'...' : v) : '-' },
+    { key: 'level', label: '等级' },
+    { key: 'experience_required', label: '所需修为', render: v => Number(v||0).toLocaleString() },
+    { key: 'breakthrough_probability', label: '突破概率', render: v => (v||50) + '%' },
+  ],
+  formFields: [
+    { key: 'id', label: '境界ID', required: true, hint: '如 realm_010' },
+    { key: 'name', label: '境界名称', required: true },
+    { key: 'description', label: '描述', type: 'textarea' },
+    { key: 'level', label: '等级', type: 'number', required: true, min: 1 },
+    { key: 'experience_required', label: '所需修为', type: 'number', required: true, min: 0 },
+    { key: 'breakthrough_probability', label: '突破概率(%)', type: 'number', default: 50, min: 0, max: 100 },
+    { key: 'event_id', label: '事件ID', type: 'number', default: 1 },
+  ],
+}));
+
+/* ===== 物品管理模块 ===== */
+ModuleRegistry.register(createCrudModule({
+  id: 'items', name: '物品管理', icon: '💎', group: '数据管理',
+  apiPath: 'api/xiuxian/items', idField: 'id', itemName: '物品',
+  columns: [
+    { key: 'id', label: 'ID' },
+    { key: 'name', label: '名称' },
+    { key: 'item_type', label: '类型', render: v => Utils.itemTypeLabel(v) },
+    { key: 'rarity', label: '稀有度', render: v => Utils.rarityTag(v) },
+    { key: 'effect_type', label: '效果类型' },
+    { key: 'effect_value', label: '效果值' },
+    { key: 'price', label: '价格', render: v => Number(v||0).toLocaleString() },
+    { key: 'is_usable', label: '可用', render: v => v ? '✅' : '❌' },
+  ],
+  formFields: [
+    { key: 'id', label: '物品ID', required: true, hint: '如 item_004' },
+    { key: 'name', label: '名称', required: true },
+    { key: 'description', label: '描述', type: 'textarea', required: true },
+    { key: 'item_type', label: '类型', type: 'select', required: true, options: [{value:'consumable',label:'消耗品'},{value:'equipment',label:'装备'},{value:'material',label:'材料'},{value:'currency',label:'货币'}] },
+    { key: 'rarity', label: '稀有度', type: 'select', default: 'common', options: [{value:'common',label:'普通'},{value:'uncommon',label:'优秀'},{value:'rare',label:'稀有'},{value:'epic',label:'史诗'},{value:'legendary',label:'传说'}] },
+    { key: 'effect_type', label: '效果类型', type: 'select', options: [{value:'',label:'无'},{value:'heal',label:'治疗'},{value:'exp',label:'修为'},{value:'attack',label:'攻击'},{value:'defense',label:'防御'},{value:'spirit_stone',label:'灵石'}] },
+    { key: 'effect_value', label: '效果值', type: 'number', default: 0 },
+    { key: 'price', label: '价格', type: 'number', default: 0 },
+    { key: 'is_usable', label: '是否可用', type: 'switch', default: true },
+  ],
+}));
+
+/* ===== 功法管理模块 ===== */
+ModuleRegistry.register(createCrudModule({
+  id: 'skills', name: '功法管理', icon: '📖', group: '数据管理',
+  apiPath: 'api/xiuxian/skills', idField: 'id', itemName: '功法',
+  columns: [
+    { key: 'id', label: 'ID' },
+    { key: 'name', label: '名称' },
+    { key: 'skill_type', label: '类型', render: v => Utils.skillTypeLabel(v) },
+    { key: 'realm_requirement', label: '境界要求' },
+    { key: 'experience_gain', label: '修为增益' },
+    { key: 'damage', label: '伤害' },
+    { key: 'cooldown', label: '冷却(回合)' },
+  ],
+  formFields: [
+    { key: 'id', label: '功法ID', required: true, hint: '如 skill_003' },
+    { key: 'name', label: '名称', required: true },
+    { key: 'description', label: '描述', type: 'textarea', required: true },
+    { key: 'skill_type', label: '类型', type: 'select', required: true, options: [{value:'cultivation',label:'修炼'},{value:'combat',label:'战斗'},{value:'passive',label:'被动'}] },
+    { key: 'realm_requirement', label: '境界要求', hint: '如 realm_001' },
+    { key: 'experience_gain', label: '修为增益', type: 'number', default: 10 },
+    { key: 'damage', label: '伤害', type: 'number', default: 0 },
+    { key: 'cooldown', label: '冷却(回合)', type: 'number', default: 0 },
+  ],
+}));
+
+/* ===== 事件管理模块 ===== */
+ModuleRegistry.register(createCrudModule({
+  id: 'events', name: '事件管理', icon: '⚡', group: '数据管理',
+  apiPath: 'api/xiuxian/events', idField: 'id', itemName: '事件',
+  columns: [
+    { key: 'id', label: 'ID' },
+    { key: 'name', label: '名称' },
+    { key: 'event_type', label: '类型', render: v => Utils.eventTypeLabel(v) },
+    { key: 'reward_type', label: '奖励类型' },
+    { key: 'reward_value', label: '奖励值' },
+    { key: 'probability', label: '概率', render: v => (v*100).toFixed(0) + '%' },
+    { key: 'is_active', label: '启用', render: v => v ? '✅' : '❌' },
+  ],
+  formFields: [
+    { key: 'id', label: '事件ID', required: true, hint: '如 event_003' },
+    { key: 'name', label: '名称', required: true },
+    { key: 'description', label: '描述', type: 'textarea', required: true },
+    { key: 'event_type', label: '类型', type: 'select', required: true, options: [{value:'explore',label:'探索'},{value:'combat',label:'战斗'},{value:'random',label:'随机'},{value:'quest',label:'任务'}] },
+    { key: 'trigger_condition', label: '触发条件' },
+    { key: 'reward_type', label: '奖励类型', type: 'select', options: [{value:'',label:'无'},{value:'item',label:'物品'},{value:'spirit_stone',label:'灵石'},{value:'experience',label:'修为'}] },
+    { key: 'reward_value', label: '奖励值', type: 'number', default: 0 },
+    { key: 'probability', label: '触发概率(0-1)', type: 'number', default: 0.5, step: 0.01, min: 0, max: 1 },
+    { key: 'is_active', label: '是否启用', type: 'switch', default: true },
+  ],
+}));
+
+/* ===== 签到管理模块 ===== */
+ModuleRegistry.register({
+  id: 'checkin', name: '签到管理', icon: '📅', group: '运营管理',
+  _data: [], _ranking: [],
+  async init() { await this.refresh(); },
+  async refresh() {
+    const [recordsRes, rankingRes] = await Promise.all([
+      Api.get('api/xiuxian/checkin/records', { page: 1, page_size: 50 }),
+      Api.get('api/xiuxian/checkin/ranking', { limit: 20 }),
+    ]);
+    if (recordsRes.code === 401 || rankingRes.code === 401) {
+      throw new Error('未登录或登录已过期');
+    }
+    this._data = recordsRes?.data?.items || recordsRes?.data?.records || (Array.isArray(recordsRes?.data) ? recordsRes.data : []);
+    this._ranking = Array.isArray(rankingRes?.data) ? rankingRes.data : [];
+  },
+  render() {
+    let html = '<div class="stats-grid"><div class="stat-card"><div class="label">签到记录数</div><div class="value">' + this._data.length + '</div></div><div class="stat-card"><div class="label">排行人数</div><div class="value">' + this._ranking.length + '</div></div></div>';
+    html += '<div class="card"><div class="card-header"><span class="card-title">签到排行</span></div><div class="table-wrapper"><table><thead><tr><th>排名</th><th>玩家ID</th><th>道号</th><th>连续天数</th></tr></thead><tbody>';
+    this._ranking.forEach((r, i) => {
+      const medal = {0:'🥇',1:'🥈',2:'🥉'}[i] || (i+1);
+      html += '<tr><td>' + medal + '</td><td>' + Utils.escapeHtml(r.player_id) + '</td><td>' + Utils.escapeHtml(r.username||'-') + '</td><td>' + r.consecutive_days + '天</td></tr>';
+    });
+    html += '</tbody></table></div></div>';
+    html += '<div class="card"><div class="card-header"><span class="card-title">签到记录</span></div><div class="table-wrapper"><table><thead><tr><th>玩家ID</th><th>签到日期</th><th>连续天数</th><th>获得修为</th></tr></thead><tbody>';
+    this._data.forEach(r => {
+      html += '<tr><td>' + Utils.escapeHtml(r.player_id) + '</td><td>' + (r.checkin_date||'-') + '</td><td>' + (r.consecutive_days||0) + '天</td><td>+' + (r.exp_reward||0) + '</td></tr>';
+    });
+    html += '</tbody></table></div></div>';
+    return html;
+  },
+});
+
+/* ===== 通知管理模块 ===== */
+ModuleRegistry.register({
+  id: 'notifications', name: '通知管理', icon: '🔔', group: '运营管理',
+  _history: [], _templates: [], _scheduled: [], _sessions: [],
+  async init() { await this.refresh(); },
+  async refresh() {
+    const [historyRes, templatesRes, scheduledRes, sessionsRes] = await Promise.all([
+      Api.get('api/xiuxian/notifications/history', { page: 1, page_size: 50 }),
+      Api.get('api/xiuxian/notifications/templates'),
+      Api.get('api/xiuxian/notifications/scheduled', { page: 1, page_size: 50 }),
+      Api.get('api/xiuxian/notifications/sessions'),
+    ]);
+    if (historyRes.code === 401 || templatesRes.code === 401 || scheduledRes.code === 401 || sessionsRes.code === 401) {
+      throw new Error('未登录或登录已过期');
+    }
+    this._history = Array.isArray(historyRes?.data) ? historyRes.data : (historyRes?.data?.items || []);
+    this._templates = Array.isArray(templatesRes?.data) ? templatesRes.data : [];
+    this._scheduled = Array.isArray(scheduledRes?.data) ? scheduledRes.data : (scheduledRes?.data?.items || []);
+    this._sessions = Array.isArray(sessionsRes?.data) ? sessionsRes.data : [];
+  },
+  render() {
+    let html = '';
+    html += '<div class="card"><div class="card-header"><span class="card-title">发送通知</span></div><div style="padding:0 4px">';
+    html += '<div class="form-group"><label class="form-label">通知标题</label><input class="form-input" id="ntf_title" placeholder="输入通知标题"></div>';
+    html += '<div class="form-group"><label class="form-label">通知内容</label><textarea class="form-textarea" id="ntf_content" placeholder="输入通知内容"></textarea></div>';
+    html += '<div class="form-row"><div class="form-group"><label class="form-label">目标类型</label><select class="form-select" id="ntf_target_type"><option value="all">全部玩家</option><option value="specific">指定玩家</option><option value="realm">指定境界</option></select></div>';
+    html += '<div class="form-group"><label class="form-label">目标ID(逗号分隔)</label><input class="form-input" id="ntf_target_ids" placeholder="留空则为全部"></div></div>';
+    html += '<button class="btn btn-primary" onclick="ModuleRegistry.get(\'notifications\')._sendNtf()">发送通知</button>';
+    html += '</div></div>';
+    html += '<div class="card"><div class="card-header"><span class="card-title">通知模板</span></div>';
+    if (this._templates.length) {
+      this._templates.forEach(t => { html += '<div class="template-card"><h5>' + Utils.escapeHtml(t.name) + '</h5><p>ID: ' + Utils.escapeHtml(t.id) + '</p></div>'; });
+    } else { html += '<div class="empty-state"><p>暂无通知模板</p></div>'; }
+    html += '</div>';
+    html += '<div class="card"><div class="card-header"><span class="card-title">定时通知</span><button class="btn btn-sm btn-primary" onclick="ModuleRegistry.get(\'notifications\')._showCreateScheduled()">+ 新增</button></div>';
+    if (this._scheduled.length) {
+      html += '<div class="table-wrapper"><table><thead><tr><th>ID</th><th>标题</th><th>Cron</th><th>状态</th><th>操作</th></tr></thead><tbody>';
+      this._scheduled.forEach(s => {
+        html += '<tr><td>' + s.id + '</td><td>' + Utils.escapeHtml(s.title) + '</td><td><code>' + Utils.escapeHtml(s.cron_expression) + '</code></td><td>' + (s.enabled ? '<span class="tag tag-gold">启用</span>' : '<span class="tag tag-common">禁用</span>') + '</td><td>';
+        html += '<button class="btn btn-sm" onclick="ModuleRegistry.get(\'notifications\')._toggleScheduled(' + s.id + ',' + !s.enabled + ')">' + (s.enabled?'禁用':'启用') + '</button> ';
+        html += '<button class="btn btn-sm btn-danger" onclick="ModuleRegistry.get(\'notifications\')._deleteScheduled(' + s.id + ')">删除</button></td></tr>';
+      });
+      html += '</tbody></table></div>';
+    } else { html += '<div class="empty-state"><p>暂无定时通知</p></div>'; }
+    html += '</div>';
+    html += '<div class="card"><div class="card-header"><span class="card-title">通知历史</span></div>';
+    if (this._history.length) {
+      html += '<div class="table-wrapper"><table><thead><tr><th>标题</th><th>状态</th><th>成功</th><th>失败</th><th>创建时间</th><th>操作</th></tr></thead><tbody>';
+      this._history.forEach(h => {
+        html += '<tr><td>' + Utils.escapeHtml(h.title) + '</td><td>' + (h.status||'-') + '</td><td>' + (h.sent_count||0) + '</td><td>' + (h.fail_count||0) + '</td><td>' + Utils.formatDate(h.created_at) + '</td>';
+        html += '<td><button class="btn btn-sm btn-danger" onclick="ModuleRegistry.get(\'notifications\')._deleteNtf(' + h.id + ')">删除</button></td></tr>';
+      });
+      html += '</tbody></table></div>';
+    } else { html += '<div class="empty-state"><p>暂无通知历史</p></div>'; }
+    html += '</div>';
+    return html;
+  },
+  async _sendNtf() {
+    const title = document.getElementById('ntf_title')?.value;
+    const content = document.getElementById('ntf_content')?.value;
+    const targetType = document.getElementById('ntf_target_type')?.value;
+    const targetIdsStr = document.getElementById('ntf_target_ids')?.value;
+    if (!title || !content) { Toast.error('标题和内容不能为空'); return; }
+    const targetIds = targetIdsStr ? targetIdsStr.split(',').map(s=>s.trim()).filter(Boolean) : undefined;
+    const res = await Api.post('api/xiuxian/notifications/send', { title, content, target_type: targetType, target_ids: targetIds });
+    if (res.code === 0) { Toast.success('通知发送成功'); await this.refresh(); App._renderModule('notifications'); }
+    else Toast.error(res.message || '发送失败');
+  },
+  _showCreateScheduled() {
+    Modal.open('新增定时通知', '<div class="form-group"><label class="form-label">标题 *</label><input class="form-input" id="sch_title"></div><div class="form-group"><label class="form-label">内容 *</label><textarea class="form-textarea" id="sch_content"></textarea></div><div class="form-group"><label class="form-label">Cron表达式 *</label><input class="form-input" id="sch_cron" placeholder="0 8 * * *"><div style="font-size:11px;color:var(--text-secondary);margin-top:2px">格式：分 时 日 月 周</div></div>', '<button class="btn" onclick="App.closeModal()">取消</button><button class="btn btn-primary" onclick="ModuleRegistry.get(\'notifications\')._doCreateScheduled()">创建</button>');
+  },
+  async _doCreateScheduled() {
+    const title = document.getElementById('sch_title')?.value;
+    const content = document.getElementById('sch_content')?.value;
+    const cron = document.getElementById('sch_cron')?.value;
+    if (!title || !content || !cron) { Toast.error('标题、内容和Cron表达式为必填'); return; }
+    const res = await Api.post('api/xiuxian/notifications/scheduled', { title, content, cron_expression: cron });
+    if (res.code === 0) { Toast.success('定时通知创建成功'); App.closeModal(); await this.refresh(); App._renderModule('notifications'); }
+    else Toast.error(res.message || '创建失败');
+  },
+  async _toggleScheduled(id, enabled) {
+    const res = await Api.put('api/xiuxian/notifications/scheduled/' + id + '/toggle', { enabled });
+    if (res.code === 0) { Toast.success(enabled ? '已启用' : '已禁用'); await this.refresh(); App._renderModule('notifications'); }
+    else Toast.error(res.message || '操作失败');
+  },
+  async _deleteScheduled(id) {
+    if (!confirm('确定删除该定时通知？')) return;
+    const res = await Api.del('api/xiuxian/notifications/scheduled/' + id);
+    if (res.code === 0) { Toast.success('已删除'); await this.refresh(); App._renderModule('notifications'); }
+    else Toast.error(res.message || '删除失败');
+  },
+  async _deleteNtf(id) {
+    if (!confirm('确定删除该通知？')) return;
+    const res = await Api.del('api/xiuxian/notifications/' + id);
+    if (res.code === 0) { Toast.success('已删除'); await this.refresh(); App._renderModule('notifications'); }
+    else Toast.error(res.message || '删除失败');
+  },
+});
+
+/* ===== 配置管理模块 ===== */
+ModuleRegistry.register({
+  id: 'config', name: '配置管理', icon: '⚙️', group: '系统管理',
+  _config: {},
+  _descriptions: {
+    'database.name': '数据库文件名', 'database.wal_mode': '启用WAL模式(推荐开启)',
+    'game.register_cooldown': '注册冷却时间(秒)',
+    'checkin.base_reward_rate': '签到基础奖励倍率', 'checkin.three_day_reward_rate': '连续3天奖励倍率',
+    'checkin.seven_day_reward_rate': '连续7天奖励倍率',
+  },
+  async init() { await this.refresh(); },
+  async refresh() {
+    const res = await Api.get('api/xiuxian/config');
+    if (res.code === 0) this._config = res.data || {};
+    else this._config = {};
+  },
+  render() {
+    const sections = { '数据库': ['database'], '游戏': ['game'], '签到': ['checkin'] };
+    let html = '<div style="margin-bottom:12px"><button class="btn btn-primary" onclick="ModuleRegistry.get(\'config\')._saveAll()">💾 保存所有配置</button> <button class="btn" onclick="ModuleRegistry.get(\'config\')._refreshConfig()">🔄 刷新</button></div>';
+    for (const [sectionName, keys] of Object.entries(sections)) {
+      html += '<div class="config-section"><div class="config-section-header" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'block\':\'none\'"><h4>' + sectionName + '</h4><span style="font-size:11px;color:var(--text-secondary)">点击展开/收起</span></div><div class="config-section-body">';
+      keys.forEach(sectionKey => {
+        const section = this._config[sectionKey];
+        if (!section || typeof section !== 'object') return;
+        for (const [fieldKey, fieldValue] of Object.entries(section)) {
+          const fullKey = sectionKey + '.' + fieldKey;
+          const desc = this._descriptions[fullKey] || '';
+          const inputId = 'cfg_' + sectionKey + '_' + fieldKey;
+          html += '<div class="config-field"><div class="field-key">' + fullKey + '</div>';
+          if (desc) html += '<div class="field-desc">' + desc + '</div>';
+          if (typeof fieldValue === 'boolean') {
+            html += '<label class="switch"><input type="checkbox" id="' + inputId + '" ' + (fieldValue?'checked':'') + '><span class="slider"></span></label>';
+          } else if (typeof fieldValue === 'number') {
+            html += '<input class="form-input" type="number" id="' + inputId + '" value="' + fieldValue + '" style="max-width:200px">';
+          } else if (typeof fieldValue === 'string') {
+            html += '<input class="form-input" type="text" id="' + inputId + '" value="' + Utils.escapeHtml(fieldValue) + '" style="max-width:400px">';
+          } else {
+            html += '<input class="form-input" type="text" id="' + inputId + '" value="' + Utils.escapeHtml(JSON.stringify(fieldValue)) + '" style="max-width:400px">';
+          }
+          html += '</div>';
+        }
+      });
+      html += '</div></div>';
+    }
+    html += '<div class="card"><div class="card-header"><span class="card-title">原始配置(JSON)</span></div>';
+    html += '<textarea class="form-textarea" id="cfg_raw_json" style="min-height:200px;font-family:Consolas,monospace;font-size:12px">' + Utils.escapeHtml(JSON.stringify(this._config, null, 2)) + '</textarea>';
+    html += '<div style="margin-top:8px"><button class="btn btn-primary" onclick="ModuleRegistry.get(\'config\')._saveRawJson()">保存JSON配置</button></div></div>';
+    // 修改密码区域
+    html += '<div class="card"><div class="card-header"><span class="card-title">🔐 修改管理员密码</span></div><div style="padding:0 4px">';
+    html += '<div class="form-group"><label class="form-label">原密码</label><input class="form-input" type="password" id="pwd_old" placeholder="输入原密码"></div>';
+    html += '<div class="form-group"><label class="form-label">新密码</label><input class="form-input" type="password" id="pwd_new" placeholder="输入新密码(至少6位)"></div>';
+    html += '<div class="form-group"><label class="form-label">确认新密码</label><input class="form-input" type="password" id="pwd_confirm" placeholder="再次输入新密码"></div>';
+    html += '<button class="btn btn-primary" onclick="ModuleRegistry.get(\'config\')._changePassword()">修改密码</button>';
+    html += '<p id="pwd_msg" style="margin-top:8px;font-size:12px;display:none"></p>';
+    html += '</div></div>';
+    return html;
+  },
+  _collectConfig() {
+    const config = {};
+    const sections = { database: ['name','wal_mode'], game: ['register_cooldown'], checkin: ['base_reward_rate','three_day_reward_rate','seven_day_reward_rate'] };
+    for (const [section, fields] of Object.entries(sections)) {
+      config[section] = {};
+      fields.forEach(field => {
+        const el = document.getElementById('cfg_' + section + '_' + field);
+        if (!el) return;
+        const sectionData = this._config[section] || {};
+        const origVal = sectionData[field];
+        if (typeof origVal === 'boolean') config[section][field] = el.checked;
+        else if (typeof origVal === 'number') config[section][field] = Number(el.value);
+        else config[section][field] = el.value;
+      });
+    }
+    return config;
+  },
+  async _saveAll() {
+    const config = this._collectConfig();
+    const res = await Api.put('api/xiuxian/config', config);
+    if (res.code === 0) { Toast.success('配置保存成功'); await this.refresh(); }
+    else Toast.error(res.message || '保存失败');
+  },
+  async _saveRawJson() {
+    try {
+      const config = JSON.parse(document.getElementById('cfg_raw_json')?.value || '{}');
+      const res = await Api.put('api/xiuxian/config', config);
+      if (res.code === 0) { Toast.success('JSON配置保存成功'); await this.refresh(); App._renderModule('config'); }
+      else Toast.error(res.message || '保存失败');
+    } catch(e) { Toast.error('JSON格式错误: ' + e.message); }
+  },
+  async _refreshConfig() { await this.refresh(); App._renderModule('config'); Toast.info('配置已刷新'); },
+  async _changePassword() {
+    const oldPwd = document.getElementById('pwd_old')?.value;
+    const newPwd = document.getElementById('pwd_new')?.value;
+    const confirmPwd = document.getElementById('pwd_confirm')?.value;
+    const msgEl = document.getElementById('pwd_msg');
+    if (!oldPwd || !newPwd || !confirmPwd) {
+      if (msgEl) { msgEl.textContent = '请填写所有密码字段'; msgEl.style.color = 'var(--accent-red)'; msgEl.style.display = 'block'; }
+      return;
+    }
+    if (newPwd !== confirmPwd) {
+      if (msgEl) { msgEl.textContent = '两次输入的新密码不一致'; msgEl.style.color = 'var(--accent-red)'; msgEl.style.display = 'block'; }
+      return;
+    }
+    if (newPwd.length < 6) {
+      if (msgEl) { msgEl.textContent = '新密码长度不能少于6位'; msgEl.style.color = 'var(--accent-red)'; msgEl.style.display = 'block'; }
+      return;
+    }
+    const res = await Api.changePassword(oldPwd, newPwd);
+    if (res.code === 0) {
+      if (msgEl) { msgEl.textContent = '密码修改成功，请使用新密码重新登录'; msgEl.style.color = 'var(--accent-green)'; msgEl.style.display = 'block'; }
+      Toast.success('密码修改成功');
+      // 清空输入框
+      document.getElementById('pwd_old').value = '';
+      document.getElementById('pwd_new').value = '';
+      document.getElementById('pwd_confirm').value = '';
+    } else {
+      if (msgEl) { msgEl.textContent = res.message || '密码修改失败'; msgEl.style.color = 'var(--accent-red)'; msgEl.style.display = 'block'; }
+      Toast.error(res.message || '密码修改失败');
+    }
+  },
+});
+
+/* ===== 系统API模块 ===== */
+ModuleRegistry.register({
+  id: 'system_api', name: '系统API', icon: '🔌', group: '系统管理',
+  _apis: [],
+  async init() {
+    this._apis = [
+      { group: '玩家', method: 'GET', path: '/api/xiuxian/players', desc: '获取所有玩家列表' },
+      { group: '玩家', method: 'GET', path: '/api/xiuxian/players/{player_id}', desc: '获取玩家详情' },
+      { group: '玩家', method: 'PUT/POST', path: '/api/xiuxian/players/{player_id}', desc: '更新玩家信息' },
+      { group: '玩家', method: 'DELETE', path: '/api/xiuxian/players/{player_id}', desc: '删除玩家' },
+      { group: '物品', method: 'GET', path: '/api/xiuxian/items', desc: '获取所有物品列表' },
+      { group: '物品', method: 'POST', path: '/api/xiuxian/items', desc: '创建物品' },
+      { group: '物品', method: 'PUT/POST', path: '/api/xiuxian/items/{item_id}', desc: '更新物品' },
+      { group: '物品', method: 'DELETE', path: '/api/xiuxian/items/{item_id}', desc: '删除物品' },
+      { group: '功法', method: 'GET', path: '/api/xiuxian/skills', desc: '获取所有功法列表' },
+      { group: '功法', method: 'POST', path: '/api/xiuxian/skills', desc: '创建功法' },
+      { group: '功法', method: 'PUT/POST', path: '/api/xiuxian/skills/{skill_id}', desc: '更新功法' },
+      { group: '功法', method: 'DELETE', path: '/api/xiuxian/skills/{skill_id}', desc: '删除功法' },
+      { group: '境界', method: 'GET', path: '/api/xiuxian/realms', desc: '获取所有境界列表' },
+      { group: '境界', method: 'POST', path: '/api/xiuxian/realms', desc: '创建境界' },
+      { group: '境界', method: 'PUT/POST', path: '/api/xiuxian/realms/{realm_id}', desc: '更新境界' },
+      { group: '境界', method: 'DELETE', path: '/api/xiuxian/realms/{realm_id}', desc: '删除境界' },
+      { group: '事件', method: 'GET', path: '/api/xiuxian/events', desc: '获取所有事件列表' },
+      { group: '事件', method: 'POST', path: '/api/xiuxian/events', desc: '创建事件' },
+      { group: '事件', method: 'PUT/POST', path: '/api/xiuxian/events/{event_id}', desc: '更新事件' },
+      { group: '事件', method: 'DELETE', path: '/api/xiuxian/events/{event_id}', desc: '删除事件' },
+      { group: '配置', method: 'GET', path: '/api/xiuxian/config', desc: '获取插件配置' },
+      { group: '配置', method: 'PUT/POST', path: '/api/xiuxian/config', desc: '更新插件配置' },
+      { group: '统计', method: 'GET', path: '/api/xiuxian/stats', desc: '获取游戏统计数据' },
+      { group: '签到', method: 'GET', path: '/api/xiuxian/checkin/records', desc: '获取所有签到记录' },
+      { group: '签到', method: 'GET', path: '/api/xiuxian/checkin/ranking', desc: '获取签到排行' },
+      { group: '通知', method: 'POST', path: '/api/xiuxian/notifications/send', desc: '发送通知' },
+      { group: '通知', method: 'GET', path: '/api/xiuxian/notifications/history', desc: '获取通知历史' },
+      { group: '通知', method: 'GET', path: '/api/xiuxian/notifications/sessions', desc: '获取玩家会话' },
+      { group: '通知', method: 'POST', path: '/api/xiuxian/notifications/scheduled', desc: '创建定时通知' },
+      { group: '通知', method: 'PUT/POST', path: '/api/xiuxian/notifications/scheduled/{id}/toggle', desc: '启用/禁用定时通知' },
+    ];
+  },
+  render() {
+    const groups = {};
+    this._apis.forEach(a => { if (!groups[a.group]) groups[a.group] = []; groups[a.group].push(a); });
+    let html = '';
+    for (const [group, apis] of Object.entries(groups)) {
+      html += '<div class="card"><div class="card-header"><span class="card-title">' + group + '接口 (' + apis.length + ')</span></div><div class="table-wrapper"><table><thead><tr><th>方法</th><th>路径</th><th>描述</th></tr></thead><tbody>';
+      apis.forEach(a => {
+        const methodColor = {GET:'var(--accent-green)',POST:'var(--accent-blue)',PUT:'var(--accent-orange)','PUT/POST':'var(--accent-orange)',DELETE:'var(--accent-red)'}[a.method]||'var(--text-secondary)';
+        html += '<tr><td><span style="color:' + methodColor + ';font-weight:600;font-size:11px">' + a.method + '</span></td><td><code style="font-size:11px;color:var(--text-gold-light)">' + a.path + '</code></td><td style="color:var(--text-secondary)">' + a.desc + '</td></tr>';
+      });
+      html += '</tbody></table></div></div>';
+    }
+    return html;
+  },
+});
+
+/* ===== 主应用控制器 ===== */
+const App = {
+  _currentModule: 'dashboard',
+  _autoRefreshInterval: null,
+
+  async init() {
+    DebugLog.log('App.init 开始');
+
+    Api.init();
+    DebugLog.log('开始渲染侧边栏');
+    this._renderSidebar();
+
+    DebugLog.log('开始加载仪表盘模块');
+    await this._switchModule('dashboard');
+    this._startAutoRefresh();
+    DebugLog.log('App.init 完成');
+  },
+
+  _renderSidebar() {
+    const nav = document.getElementById('sidebarNav');
+    const groups = ModuleRegistry.getGroups();
+    let html = '';
+    for (const [groupName, modules] of Object.entries(groups)) {
+      html += '<div class="nav-group"><div class="nav-group-title">' + groupName + '</div>';
+      modules.forEach(m => {
+        html += '<div class="nav-item' + (m.id===this._currentModule?' active':'') + '" data-module="' + m.id + '" onclick="App._switchModule(\'' + m.id + '\')"><span class="icon">' + m.icon + '</span><span>' + m.name + '</span></div>';
+      });
+      html += '</div>';
+    }
+    nav.innerHTML = html;
+  },
+
+  async _switchModule(moduleId) {
+    this._currentModule = moduleId;
+    document.querySelectorAll('.nav-item').forEach(el => {
+      el.classList.toggle('active', el.dataset.module === moduleId);
+    });
+    const mod = ModuleRegistry.get(moduleId);
+    if (!mod) return;
+    document.getElementById('pageTitle').textContent = mod.name;
+    document.getElementById('contentArea').innerHTML = '<div class="loading"><div class="spinner"></div>加载中...</div>';
+    try {
+      await mod.init();
+      this._renderModule(moduleId);
+    } catch(e) {
+      DebugLog.error('模块加载失败: ' + e.message);
+      if (e.message && e.message.includes('未登录')) {
+        App._showLoginForm();
+      } else {
+        document.getElementById('contentArea').innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><p>加载失败: ' + Utils.escapeHtml(e.message) + '</p><button class="btn" style="margin-top:12px" onclick="App._switchModule(\'' + moduleId + '\')">重试</button></div>';
+      }
+    }
+  },
+
+  _renderModule(moduleId) {
+    const mod = ModuleRegistry.get(moduleId);
+    if (!mod) return;
+    try {
+      document.getElementById('contentArea').innerHTML = mod.render();
+    } catch(e) {
+      DebugLog.error('渲染失败: ' + e.message);
+      document.getElementById('contentArea').innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><p>渲染失败: ' + Utils.escapeHtml(e.message) + '</p></div>';
+    }
+  },
+
+  closeModal() { Modal.close(); },
+
+  _showLoginForm() {
+    document.getElementById('contentArea').innerHTML =
+      '<div class="card" style="max-width:400px;margin:40px auto;text-align:center">' +
+      '<div class="card-header" style="justify-content:center"><span class="card-title">🔐 修仙后台管理登录</span></div>' +
+      '<div style="padding:8px 4px">' +
+      '<div class="form-group"><label class="form-label">用户名</label><input class="form-input" id="login_user" value="admin" placeholder="用户名"></div>' +
+      '<div class="form-group"><label class="form-label">密码</label><input class="form-input" id="login_pass" type="password" placeholder="密码"></div>' +
+      '<button class="btn btn-primary" style="width:100%" onclick="App._doLogin()">登录</button>' +
+      '<p style="margin-top:12px;font-size:11px;color:var(--text-secondary)">默认账号: admin / 默认密码: xiuxian_admin</p>' +
+      '<p id="login_err" style="margin-top:8px;font-size:12px;color:var(--accent-red);display:none"></p>' +
+      '</div></div>';
+  },
+
+  async _doLogin() {
+    const user = document.getElementById('login_user')?.value?.trim();
+    const pass = document.getElementById('login_pass')?.value;
+    const errEl = document.getElementById('login_err');
+    if (!user || !pass) { if (errEl) { errEl.textContent = '用户名和密码不能为空'; errEl.style.display = 'block'; } return; }
+
+    const btn = document.querySelector('#contentArea button');
+    if (btn) { btn.disabled = true; btn.textContent = '登录中...'; }
+
+    const res = await Api.login(user, pass);
+    if (res.code === 0) {
+      Toast.success('登录成功');
+      await this._switchModule('dashboard');
+    } else {
+      if (errEl) { errEl.textContent = res.message || '登录失败'; errEl.style.display = 'block'; }
+      if (btn) { btn.disabled = false; btn.textContent = '登录'; }
+    }
+  },
+
+  _startAutoRefresh() {
+    this._autoRefreshInterval = setInterval(async () => {
+      const mod = ModuleRegistry.get(this._currentModule);
+      if (mod && mod.refresh) {
+        try { await mod.refresh(); this._renderModule(this._currentModule); } catch(e) {}
+      }
+    }, 30000);
+  },
+};
+
+/* ===== 启动 ===== */
+document.addEventListener('DOMContentLoaded', () => {
+  DebugLog.log('DOMContentLoaded 触发');
+  App.init().catch(e => {
+    DebugLog.error('App.init 顶层异常: ' + e.message);
+    document.getElementById('contentArea').innerHTML = '<div class="empty-state"><div class="icon">❌</div><p>系统初始化失败: ' + Utils.escapeHtml(e.message) + '</p><p style="margin-top:8px;font-size:11px">请检查浏览器控制台获取详细信息</p></div>';
+  });
+});
+</script>
+</body>
+</html>

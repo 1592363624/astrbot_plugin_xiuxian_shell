@@ -7,6 +7,7 @@ from .item import Item, InventoryItem
 from .skill import Skill, PlayerSkill
 from .realm import Realm
 from .event import GameEvent, PlayerEvent
+from .checkin import CheckinRecord
 
 __all__ = [
     "Player",
@@ -17,4 +18,5 @@ __all__ = [
     "Realm",
     "GameEvent",
     "PlayerEvent",
+    "CheckinRecord",
 ]

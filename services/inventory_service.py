@@ -1,33 +1,45 @@
 """
 背包服务
-处理物品和背包相关的业务逻辑
+处理物品和背包相关的业务逻辑，包括丹药服用和丹毒系统
 """
 import uuid
-from typing import Optional, List, Dict, Any
+from datetime import datetime, timedelta
+from typing import Optional, List, Dict, Any, TYPE_CHECKING
 from astrbot.api import logger
 from ..database import DatabaseManager
 from ..models import Item, InventoryItem
+
+if TYPE_CHECKING:
+    from ..config import ConfigManager
 
 
 class InventoryService:
     """背包服务类"""
 
-    def __init__(self, db_manager: DatabaseManager):
+    def __init__(self, db_manager: DatabaseManager, config_manager: "ConfigManager" = None):
         """
         初始化背包服务
-        
+
         Args:
             db_manager: 数据库管理器实例
+            config_manager: 配置管理器实例
         """
         self.db = db_manager
+        self.config_manager = config_manager
+
+    def _get_pill_config(self) -> Dict[str, Any]:
+        """获取丹药配置"""
+        if self.config_manager:
+            return self.config_manager.get("pill", {})
+        return {}
 
     async def get_player_inventory(self, player_id: str) -> List[Dict[str, Any]]:
         """
         获取玩家背包
-        
+
         Args:
             player_id: 玩家ID
-            
+
         Returns:
             List[Dict[str, Any]]: 背包物品列表
         """
@@ -44,42 +56,38 @@ class InventoryService:
     async def add_item(self, player_id: str, item_id: str, quantity: int = 1) -> Dict[str, Any]:
         """
         添加物品到背包
-        
+
         Args:
             player_id: 玩家ID
             item_id: 物品ID
             quantity: 数量
-            
+
         Returns:
             Dict[str, Any]: 操作结果
         """
-        # 检查物品是否存在
         item = await self.get_item_by_id(item_id)
         if not item:
             raise ValueError("物品不存在")
-        
-        # 检查玩家背包中是否已有该物品
+
         existing = await self.db.fetch_one(
             "SELECT * FROM player_inventory WHERE player_id = ? AND item_id = ?",
             (player_id, item_id)
         )
-        
+
         if existing:
-            # 更新数量
             await self.db.execute(
                 "UPDATE player_inventory SET quantity = quantity + ? WHERE id = ?",
                 (quantity, existing["id"])
             )
         else:
-            # 新增物品
             inventory_id = str(uuid.uuid4())
             await self.db.execute(
                 "INSERT INTO player_inventory (id, player_id, item_id, quantity) VALUES (?, ?, ?, ?)",
                 (inventory_id, player_id, item_id, quantity)
             )
-        
+
         await self.db.commit()
-        
+
         return {
             "success": True,
             "item_name": item.name,
@@ -90,12 +98,12 @@ class InventoryService:
     async def remove_item(self, player_id: str, item_id: str, quantity: int = 1) -> Dict[str, Any]:
         """
         从背包移除物品
-        
+
         Args:
             player_id: 玩家ID
             item_id: 物品ID
             quantity: 数量
-            
+
         Returns:
             Dict[str, Any]: 操作结果
         """
@@ -103,28 +111,26 @@ class InventoryService:
             "SELECT * FROM player_inventory WHERE player_id = ? AND item_id = ?",
             (player_id, item_id)
         )
-        
+
         if not existing:
             raise ValueError("物品不存在于背包中")
-        
+
         if existing["quantity"] < quantity:
             raise ValueError("物品数量不足")
-        
+
         if existing["quantity"] == quantity:
-            # 删除记录
             await self.db.execute(
                 "DELETE FROM player_inventory WHERE id = ?",
                 (existing["id"],)
             )
         else:
-            # 减少数量
             await self.db.execute(
                 "UPDATE player_inventory SET quantity = quantity - ? WHERE id = ?",
                 (quantity, existing["id"])
             )
-        
+
         await self.db.commit()
-        
+
         item = await self.get_item_by_id(item_id)
         return {
             "success": True,
@@ -136,37 +142,33 @@ class InventoryService:
     async def use_item(self, player_id: str, item_id: str) -> Dict[str, Any]:
         """
         使用物品
-        
+
         Args:
             player_id: 玩家ID
             item_id: 物品ID
-            
+
         Returns:
             Dict[str, Any]: 使用结果
         """
-        # 获取物品信息
         item = await self.get_item_by_id(item_id)
         if not item:
             raise ValueError("物品不存在")
-        
+
         if not item.is_usable:
             raise ValueError("该物品不可使用")
-        
-        # 检查玩家是否有该物品
+
         inventory_item = await self.db.fetch_one(
             "SELECT * FROM player_inventory WHERE player_id = ? AND item_id = ?",
             (player_id, item_id)
         )
-        
+
         if not inventory_item or inventory_item["quantity"] <= 0:
             raise ValueError("你没有这个物品")
-        
-        # 应用物品效果
+
         effect_message = await self._apply_item_effect(player_id, item)
-        
-        # 移除物品
+
         await self.remove_item(player_id, item_id, 1)
-        
+
         return {
             "success": True,
             "item_name": item.name,
@@ -174,52 +176,329 @@ class InventoryService:
             "message": f"使用了【{item.name}】，{effect_message}",
         }
 
-    async def _apply_item_effect(self, player_id: str, item: Item) -> str:
+    # ==================== 服用丹药 ====================
+
+    async def use_pill(self, player_id: str, item_name: str, quantity: int = 1) -> Dict[str, Any]:
         """
-        应用物品效果
-        
+        服用丹药
+        支持按名称服用，含境界壁垒检查和丹毒系统
+
+        Args:
+            player_id: 玩家ID
+            item_name: 丹药名称
+            quantity: 服用数量
+
+        Returns:
+            Dict[str, Any]: 服用结果
+        """
+        if quantity < 1:
+            raise ValueError("服用数量必须大于0")
+
+        item = await self.get_item_by_name(item_name)
+        if not item:
+            raise ValueError(f"未找到名为【{item_name}】的物品")
+
+        if item.item_type != "consumable":
+            raise ValueError(f"【{item.name}】不是丹药，无法服用")
+
+        if not item.is_usable:
+            raise ValueError(f"【{item.name}】不可服用")
+
+        inventory_item = await self.db.fetch_one(
+            "SELECT * FROM player_inventory WHERE player_id = ? AND item_id = ?",
+            (player_id, item.id)
+        )
+
+        if not inventory_item or inventory_item["quantity"] < quantity:
+            owned = inventory_item["quantity"] if inventory_item else 0
+            raise ValueError(f"【{item.name}】数量不足，你拥有{owned}个，尝试服用{quantity}个")
+
+        realm_check = await self._check_pill_realm_requirement(player_id, item)
+        if not realm_check["passed"]:
+            return {
+                "success": False,
+                "message": f"【境界壁垒】你的境界为{realm_check['player_realm']}，无法承受【{item.name}】的药力，需要达到{realm_check['required_realm']}方可服用。",
+            }
+
+        await self.remove_item(player_id, item.id, quantity)
+
+        total_effect_value = item.effect_value * quantity
+        pill_cfg = self._get_pill_config()
+        is_detox = item.id == pill_cfg.get("detox_item_id", "item_detox")
+
+        if is_detox:
+            detox_result = await self._clear_toxicity(player_id)
+            message_lines = [
+                f"你服下了{quantity}枚【{item.name}】。",
+                detox_result["message"],
+            ]
+            return {
+                "success": True,
+                "item_name": item.name,
+                "quantity": quantity,
+                "is_detox": True,
+                "message": "\n".join(message_lines),
+            }
+
+        effect_messages = []
+        for _ in range(quantity):
+            effect_msg = await self._apply_item_effect(player_id, item)
+            effect_messages.append(effect_msg)
+
+        toxicity_result = await self._apply_pill_toxicity(player_id, item, quantity)
+
+        message_lines = [f"你服下了{quantity}枚【{item.name}】。"]
+        for msg in effect_messages:
+            message_lines.append(msg)
+
+        if toxicity_result["toxicity_added"] > 0:
+            message_lines.append(
+                f"【丹毒警告】连续服用同类丹药，体内丹毒累积了{toxicity_result['toxicity_added']}点！"
+                f"当前丹毒总量：{toxicity_result['total_toxicity']}点。"
+                f"丹毒会影响闭关收益和炼制成功率，可使用【清灵丹】清除。"
+            )
+
+        logger.info(
+            f"玩家 {player_id} 服用 {item.name} x{quantity}, "
+            f"丹毒: +{toxicity_result['toxicity_added']}, 总计: {toxicity_result['total_toxicity']}"
+        )
+
+        return {
+            "success": True,
+            "item_name": item.name,
+            "quantity": quantity,
+            "effect_messages": effect_messages,
+            "toxicity": toxicity_result,
+            "message": "\n".join(message_lines),
+        }
+
+    async def _check_pill_realm_requirement(self, player_id: str, item: Item) -> Dict[str, Any]:
+        """
+        检查丹药的境界壁垒
+
         Args:
             player_id: 玩家ID
             item: 物品对象
-            
+
         Returns:
-            str: 效果描述
+            Dict[str, Any]: 检查结果
         """
-        if item.effect_type == "heal":
-            # 恢复生命值
+        if not item.realm_requirement:
+            return {"passed": True}
+
+        player = await self.db.fetch_one(
+            "SELECT p.*, r.level as realm_level, r.name as realm_name FROM players p JOIN realms r ON p.realm_id = r.id WHERE p.id = ?",
+            (player_id,)
+        )
+        if not player:
+            return {"passed": False, "player_realm": "未知", "required_realm": "未知"}
+
+        required_realm = await self.db.fetch_one(
+            "SELECT level, name FROM realms WHERE id = ?",
+            (item.realm_requirement,)
+        )
+        if not required_realm:
+            return {"passed": True}
+
+        if player["realm_level"] < required_realm["level"]:
+            return {
+                "passed": False,
+                "player_realm": player["realm_name"],
+                "required_realm": required_realm["name"],
+            }
+
+        return {"passed": True}
+
+    async def _apply_pill_toxicity(self, player_id: str, item: Item, quantity: int) -> Dict[str, Any]:
+        """
+        应用丹毒效果
+        24小时内连续服用同类丹药会积累丹毒
+
+        Args:
+            player_id: 玩家ID
+            item: 丹药物品对象
+            quantity: 服用数量
+
+        Returns:
+            Dict[str, Any]: 丹毒结果
+        """
+        pill_cfg = self._get_pill_config()
+        duration_hours = pill_cfg.get("toxicity_duration_hours", 24)
+        same_pill_toxicity = pill_cfg.get("same_pill_toxicity", 1)
+
+        now = datetime.utcnow()
+        expires_at = now + timedelta(hours=duration_hours)
+
+        existing_active = await self.db.fetch_one(
+            "SELECT * FROM pill_toxicity_records WHERE player_id = ? AND item_id = ? AND expires_at > ?",
+            (player_id, item.id, now.isoformat())
+        )
+
+        toxicity_added = 0
+        if existing_active:
+            toxicity_added = same_pill_toxicity * quantity
             await self.db.execute(
-                "UPDATE players SET health = MIN(max_health, health + ?) WHERE id = ?",
-                (item.effect_value, player_id)
+                "UPDATE pill_toxicity_records SET toxicity_value = toxicity_value + ?, expires_at = ? WHERE id = ?",
+                (toxicity_added, expires_at.isoformat(), existing_active["id"])
+            )
+        else:
+            toxicity_added = 0
+            record_id = str(uuid.uuid4())
+            await self.db.execute(
+                """INSERT INTO pill_toxicity_records
+                (id, player_id, item_id, item_name, toxicity_value, taken_at, expires_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (record_id, player_id, item.id, item.name, 0, now.isoformat(), expires_at.isoformat())
+            )
+
+        await self.db.commit()
+
+        total_toxicity = await self._get_total_toxicity(player_id)
+
+        return {
+            "toxicity_added": toxicity_added,
+            "total_toxicity": total_toxicity,
+        }
+
+    async def _get_total_toxicity(self, player_id: str) -> int:
+        """
+        获取玩家当前丹毒总量
+
+        Args:
+            player_id: 玩家ID
+
+        Returns:
+            int: 丹毒总量
+        """
+        now = datetime.utcnow()
+        await self._cleanup_expired_toxicity(player_id)
+
+        result = await self.db.fetch_one(
+            "SELECT COALESCE(SUM(toxicity_value), 0) as total FROM pill_toxicity_records WHERE player_id = ? AND expires_at > ?",
+            (player_id, now.isoformat())
+        )
+        return result["total"] if result else 0
+
+    async def _cleanup_expired_toxicity(self, player_id: str):
+        """
+        清理过期的丹毒记录
+
+        Args:
+            player_id: 玩家ID
+        """
+        now = datetime.utcnow()
+        await self.db.execute(
+            "DELETE FROM pill_toxicity_records WHERE player_id = ? AND expires_at <= ?",
+            (player_id, now.isoformat())
+        )
+        await self.db.commit()
+
+    async def _clear_toxicity(self, player_id: str) -> Dict[str, Any]:
+        """
+        清除玩家所有丹毒（使用清灵丹）
+
+        Args:
+            player_id: 玩家ID
+
+        Returns:
+            Dict[str, Any]: 清除结果
+        """
+        total = await self._get_total_toxicity(player_id)
+
+        await self.db.execute(
+            "DELETE FROM pill_toxicity_records WHERE player_id = ?",
+            (player_id,)
+        )
+        await self.db.commit()
+
+        if total > 0:
+            return {
+                "success": True,
+                "cleared_toxicity": total,
+                "message": f"清灵丹入腹，体内{total}点丹毒已被尽数化解，经脉重新通畅！",
+            }
+        else:
+            return {
+                "success": True,
+                "cleared_toxicity": 0,
+                "message": "清灵丹入腹，你体内并无丹毒积聚，药力温和地滋养了经脉。",
+            }
+
+    async def get_toxicity_status(self, player_id: str) -> Dict[str, Any]:
+        """
+        获取玩家丹毒状态
+
+        Args:
+            player_id: 玩家ID
+
+        Returns:
+            Dict[str, Any]: 丹毒状态信息
+        """
+        await self._cleanup_expired_toxicity(player_id)
+
+        now = datetime.utcnow()
+        records = await self.db.fetch_all(
+            "SELECT * FROM pill_toxicity_records WHERE player_id = ? AND expires_at > ? ORDER BY taken_at DESC",
+            (player_id, now.isoformat())
+        )
+
+        total_toxicity = sum(r["toxicity_value"] for r in records)
+
+        return {
+            "total_toxicity": total_toxicity,
+            "active_records": [dict(r) for r in records],
+            "has_toxicity": total_toxicity > 0,
+        }
+
+    async def _apply_item_effect(self, player_id: str, item: Item) -> str:
+        if item.effect_type == "heal":
+            player = await self.db.fetch_one(
+                "SELECT p.*, r.level as realm_level FROM players p JOIN realms r ON p.realm_id = r.id WHERE p.id = ?",
+                (player_id,)
+            )
+            if player:
+                from ..utils.attributes import calc_battle_attrs
+                battle_attrs = calc_battle_attrs(
+                    level=player["realm_level"],
+                    bone=player["bone"], spirit=player["spirit"],
+                    intel=player["intel"], str_=player["str"],
+                    percep=player["percep"], luck=player["luck"],
+                )
+                max_health = battle_attrs["max_health"]
+            else:
+                max_health = 100
+            await self.db.execute(
+                "UPDATE players SET health = MIN(?, health + ?) WHERE id = ?",
+                (max_health, item.effect_value, player_id)
             )
             await self.db.commit()
             return f"恢复了 {item.effect_value} 点生命值"
-        
+
         elif item.effect_type == "exp":
-            # 增加修为
             await self.db.execute(
                 "UPDATE players SET experience = experience + ? WHERE id = ?",
                 (item.effect_value, player_id)
             )
             await self.db.commit()
             return f"增加了 {item.effect_value} 点修为"
-        
+
         elif item.effect_type == "attack":
-            # 临时增加攻击（可设计为buff）
             return f"攻击力临时提升 {item.effect_value} 点"
-        
+
         elif item.effect_type == "defense":
-            # 临时增加防御
             return f"防御力临时提升 {item.effect_value} 点"
-        
+
         elif item.effect_type == "spirit_stone":
-            # 增加灵石
             await self.db.execute(
                 "UPDATE players SET spirit_stone = spirit_stone + ? WHERE id = ?",
                 (item.effect_value, player_id)
             )
             await self.db.commit()
             return f"获得了 {item.effect_value} 灵石"
-        
+
+        elif item.effect_type == "detox":
+            return "丹毒已被清除"
+
         return "物品已使用"
 
     # ==================== 物品管理 ====================
@@ -250,8 +529,8 @@ class InventoryService:
         """创建物品"""
         item_id = item_data.get("id", str(uuid.uuid4()))
         sql = """
-            INSERT INTO items (id, name, description, item_type, rarity, effect_type, effect_value, price, is_usable)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO items (id, name, description, item_type, rarity, effect_type, effect_value, price, is_usable, realm_requirement)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         await self.db.execute(sql, (
             item_id,
@@ -263,23 +542,24 @@ class InventoryService:
             item_data.get("effect_value", 0),
             item_data.get("price", 0),
             item_data.get("is_usable", 1),
+            item_data.get("realm_requirement"),
         ))
         await self.db.commit()
         return await self.get_item_by_id(item_id)
 
     async def update_item(self, item_id: str, **kwargs) -> Optional[Item]:
         """更新物品"""
-        allowed_fields = ["name", "description", "item_type", "rarity", "effect_type", "effect_value", "price", "is_usable"]
+        allowed_fields = ["name", "description", "item_type", "rarity", "effect_type", "effect_value", "price", "is_usable", "realm_requirement"]
         updates = []
         values = []
         for key, value in kwargs.items():
             if key in allowed_fields:
                 updates.append(f"{key} = ?")
                 values.append(value)
-        
+
         if not updates:
             return await self.get_item_by_id(item_id)
-        
+
         values.append(item_id)
         sql = f"UPDATE items SET {', '.join(updates)} WHERE id = ?"
         await self.db.execute(sql, tuple(values))

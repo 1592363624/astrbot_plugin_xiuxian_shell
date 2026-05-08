@@ -127,15 +127,6 @@ def upgrade() -> None:
         sa.Column("triggered_at", sa.TIMESTAMP, server_default=sa.func.current_timestamp()),
     )
 
-    # 游戏配置表
-    op.create_table(
-        "game_config",
-        sa.Column("key", sa.Text, primary_key=True),
-        sa.Column("value", sa.Text, nullable=False),
-        sa.Column("description", sa.Text),
-        sa.Column("updated_at", sa.TIMESTAMP, server_default=sa.func.current_timestamp()),
-    )
-
 
 def downgrade() -> None:
     """回滚初始表结构"""
@@ -148,7 +139,6 @@ def downgrade() -> None:
         "items",
         "players",
         "realms",
-        "game_config",
     ]
     for table in tables:
         op.drop_table(table)

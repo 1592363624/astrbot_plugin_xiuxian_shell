@@ -1,48 +1,46 @@
 """
 物品API
-提供物品和背包相关的接口
+提供物品和背包相关的接口，包括丹药服用
 """
 from typing import Dict, Any
-from aiohttp import web
-from ..services import InventoryService
+
+from ..services import InventoryService, PlayerService
 
 
 class ItemAPI:
     """物品API类"""
 
-    def __init__(self, inventory_service: InventoryService):
+    def __init__(self, inventory_service: InventoryService, player_service: PlayerService):
         """
         初始化物品API
-        
+
         Args:
             inventory_service: 背包服务实例
+            player_service: 玩家服务实例
         """
         self.inventory_service = inventory_service
+        self.player_service = player_service
 
     async def get_inventory(self, user_id: str) -> str:
         """
         获取玩家背包
-        
+
         Args:
             user_id: 用户ID
-            
+
         Returns:
-            str: 背包信息
+            背包信息
         """
-        from ..services import PlayerService
-        player = await self.inventory_service.db.fetch_one(
-            "SELECT id, username FROM players WHERE user_id = ?",
-            (user_id,)
-        )
-        if not player:
-            return "你还没有注册修仙角色，请先使用【修仙注册】"
-        
-        items = await self.inventory_service.get_player_inventory(player["id"])
-        
+        player_dict, error = await self.player_service.check_player_registered(user_id)
+        if error:
+            return error
+
+        items = await self.inventory_service.get_player_inventory(player_dict["id"])
+
         if not items:
-            return f"【{player['username']}的背包】\n空空如也，快去探索获取物品吧！"
-        
-        inventory_text = f"【{player['username']}的背包】\n"
+            return f"【{player_dict['username']}的背包】\n空空如也，快去探索获取物品吧！"
+
+        inventory_text = f"【{player_dict['username']}的背包】\n"
         for item in items:
             rarity_map = {
                 "common": "普通",
@@ -53,76 +51,57 @@ class ItemAPI:
             }
             rarity = rarity_map.get(item.get("rarity", "common"), "普通")
             inventory_text += f"- {item['name']} x{item['quantity']} [{rarity}]\n"
-        
+
         return inventory_text.strip()
 
-    async def use_item(self, user_id: str, item_name: str) -> str:
+    async def use_pill(self, user_id: str, item_name: str, quantity: int = 1) -> str:
         """
-        使用物品
-        
+        服用丹药
+
         Args:
             user_id: 用户ID
-            item_name: 物品名称
-            
+            item_name: 丹药名称
+            quantity: 服用数量
+
         Returns:
-            str: 使用结果
+            str: 服用结果文本
         """
-        if not item_name:
-            return "请指定要使用的物品名称，格式：使用物品 <名称>"
-        
-        # 获取玩家
-        player = await self.inventory_service.db.fetch_one(
-            "SELECT id FROM players WHERE user_id = ?",
-            (user_id,)
-        )
-        if not player:
-            return "你还没有注册修仙角色，请先使用【修仙注册】"
-        
-        # 根据名称查找物品
-        item = await self.inventory_service.get_item_by_name(item_name)
-        if not item:
-            return f"找不到物品【{item_name}】"
-        
+        player_dict, error = await self.player_service.check_player_registered(user_id)
+        if error:
+            return error
+
         try:
-            result = await self.inventory_service.use_item(player["id"], item.id)
-            return result["message"]
+            result = await self.inventory_service.use_pill(player_dict["id"], item_name, quantity)
+            return result.get("message", "服用异常")
         except ValueError as e:
             return str(e)
         except Exception as e:
-            return f"使用物品失败：{str(e)}"
+            return f"服用失败：{str(e)}"
 
-    # ==================== HTTP API接口 ====================
+    async def get_toxicity_status(self, user_id: str) -> str:
+        """
+        获取丹毒状态
 
-    async def api_get_all_items(self, request: web.Request) -> web.Response:
-        """获取所有物品（HTTP API）"""
-        items = await self.inventory_service.get_all_items()
-        return web.json_response({
-            "code": 0,
-            "data": [item.to_dict() for item in items],
-        })
+        Args:
+            user_id: 用户ID
 
-    async def api_create_item(self, request: web.Request) -> web.Response:
-        """创建物品（HTTP API）"""
-        data = await request.json()
-        try:
-            item = await self.inventory_service.create_item(data)
-            return web.json_response({"code": 0, "data": item.to_dict()})
-        except Exception as e:
-            return web.json_response({"code": -1, "message": str(e)}, status=400)
+        Returns:
+            str: 丹毒状态文本
+        """
+        player_dict, error = await self.player_service.check_player_registered(user_id)
+        if error:
+            return error
 
-    async def api_update_item(self, request: web.Request) -> web.Response:
-        """更新物品（HTTP API）"""
-        item_id = request.match_info["item_id"]
-        data = await request.json()
-        item = await self.inventory_service.update_item(item_id, **data)
-        if not item:
-            return web.json_response({"code": -1, "message": "物品不存在"}, status=404)
-        return web.json_response({"code": 0, "data": item.to_dict()})
+        status = await self.inventory_service.get_toxicity_status(player_dict["id"])
 
-    async def api_delete_item(self, request: web.Request) -> web.Response:
-        """删除物品（HTTP API）"""
-        item_id = request.match_info["item_id"]
-        success = await self.inventory_service.delete_item(item_id)
-        if not success:
-            return web.json_response({"code": -1, "message": "删除失败"}, status=400)
-        return web.json_response({"code": 0, "message": "删除成功"})
+        if not status["has_toxicity"]:
+            return "【丹毒状态】\n你体内并无丹毒积聚，经脉通畅。"
+
+        lines = ["【丹毒状态】"]
+        lines.append(f"当前丹毒总量：{status['total_toxicity']}点")
+        lines.append("丹毒明细：")
+        for record in status["active_records"]:
+            lines.append(f"  - 【{record['item_name']}】丹毒{record['toxicity_value']}点")
+
+        lines.append("丹毒会影响闭关收益和炼制成功率，可使用【清灵丹】清除。")
+        return "\n".join(lines)

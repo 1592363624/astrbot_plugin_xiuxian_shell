@@ -1,6 +1,7 @@
 """
 境界数据模型
 定义游戏中境界的数据结构
+战斗属性由基础属性 + 境界等级通过公式动态计算，不存储在境界表中
 """
 from dataclasses import dataclass
 from datetime import datetime
@@ -9,16 +10,26 @@ from typing import Optional
 
 @dataclass
 class Realm:
-    """境界数据模型"""
+    """
+    境界数据模型
+    
+    属性说明:
+        id: 境界唯一标识（如 realm_001）
+        name: 境界名称（如 凡人、炼气初期）
+        description: 境界描述
+        level: 境界等级（1-43）
+        experience_required: 升级所需修为经验
+        breakthrough_probability: 基础突破概率（百分比）
+        event_id: 基础事件编号
+    """
     
     id: str
     name: str
     description: str
     level: int
     experience_required: int
-    health_bonus: int = 0
-    attack_bonus: int = 0
-    defense_bonus: int = 0
+    breakthrough_probability: int = 50
+    event_id: int = 1
     created_at: Optional[datetime] = None
     
     def to_dict(self) -> dict:
@@ -29,9 +40,8 @@ class Realm:
             "description": self.description,
             "level": self.level,
             "experience_required": self.experience_required,
-            "health_bonus": self.health_bonus,
-            "attack_bonus": self.attack_bonus,
-            "defense_bonus": self.defense_bonus,
+            "breakthrough_probability": self.breakthrough_probability,
+            "event_id": self.event_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
     
@@ -44,8 +54,7 @@ class Realm:
             description=data.get("description"),
             level=data.get("level"),
             experience_required=data.get("experience_required"),
-            health_bonus=data.get("health_bonus", 0),
-            attack_bonus=data.get("attack_bonus", 0),
-            defense_bonus=data.get("defense_bonus", 0),
+            breakthrough_probability=data.get("breakthrough_probability", 50),
+            event_id=data.get("event_id", 1),
             created_at=datetime.fromisoformat(data["created_at"]) if data.get("created_at") else None,
         )

@@ -1,0 +1,971 @@
+openapi: 3.0.3
+info:
+  title: 修仙插件后台管理API
+  description: |
+    修仙插件后台管理系统HTTP接口文档。
+    提供玩家管理、物品管理、功法管理、境界管理、事件管理、签到管理、通知管理等功能。
+  version: 1.0.0
+  contact:
+    name: 修仙插件开发团队
+
+servers:
+  - url: http://localhost:{port}
+    description: 本地开发服务器
+    variables:
+      port:
+        default: "8080"
+        description: 后台管理服务器端口
+
+paths:
+  # ==================== 认证 ====================
+  /api/xiuxian/auth/login:
+    post:
+      tags:
+        - 认证
+      summary: 管理员登录
+      description: 使用密码登录后台管理系统，获取访问令牌
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - password
+              properties:
+                username:
+                  type: string
+                  description: 用户名
+                password:
+                  type: string
+                  description: 密码
+      responses:
+        "200":
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+        "401":
+          description: 密码错误
+
+  /api/xiuxian/auth/logout:
+    post:
+      tags:
+        - 认证
+      summary: 管理员登出
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: 登出成功
+
+  /api/xiuxian/auth/change-password:
+    post:
+      tags:
+        - 认证
+      summary: 修改管理员密码
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - old_password
+                - new_password
+              properties:
+                old_password:
+                  type: string
+                  description: 原密码
+                new_password:
+                  type: string
+                  description: 新密码（至少6位）
+      responses:
+        "200":
+          description: 修改成功
+        "400":
+          description: 参数错误或原密码不正确
+
+  # ==================== 玩家管理 ====================
+  /api/xiuxian/players:
+    get:
+      tags:
+        - 玩家管理
+      summary: 获取玩家列表
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+          description: 页码
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+          description: 每页数量
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+
+  /api/xiuxian/players/{player_id}:
+    get:
+      tags:
+        - 玩家管理
+      summary: 获取玩家详情
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: player_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 玩家ID
+      responses:
+        "200":
+          description: 成功
+        "404":
+          description: 玩家不存在
+
+    post:
+      tags:
+        - 玩家管理
+      summary: 更新玩家信息
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: player_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 玩家ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlayerUpdateRequest"
+      responses:
+        "200":
+          description: 更新成功
+        "404":
+          description: 玩家不存在
+
+  /api/xiuxian/players/{player_id}/delete:
+    post:
+      tags:
+        - 玩家管理
+      summary: 彻底删除玩家
+      description: |
+        级联删除玩家及其所有关联数据，包括：
+        - 玩家背包物品
+        - 玩家功法
+        - 玩家事件记录
+        - 签到记录
+        - 闭关记录
+        - 丹毒记录
+        - 玩家会话信息
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: player_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 玩家ID
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+        "400":
+          description: 删除失败
+        "404":
+          description: 玩家不存在
+
+  /api/xiuxian/players/{player_id}/reset:
+    post:
+      tags:
+        - 玩家管理
+      summary: 重置玩家数据
+      description: |
+        保留玩家账号，但清空所有游戏进度：
+        - 清空背包、功法、事件记录、签到记录、闭关记录、丹毒记录
+        - 重置境界为凡人(realm_001)
+        - 修为清零、灵石回到初始值100
+        - 后天属性清零
+        - 气血/法力/体力回到初始值
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: player_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 玩家ID
+      responses:
+        "200":
+          description: 重置成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+        "400":
+          description: 重置失败
+        "404":
+          description: 玩家不存在
+
+  /api/xiuxian/players/{player_id}/ban:
+    post:
+      tags:
+        - 玩家管理
+      summary: 封禁玩家（软删除）
+      description: |
+        不真正删除数据，而是将 is_deleted 标记为 1，并记录封禁理由。
+        被软删除的玩家无法正常使用游戏功能，执行指令时会收到封禁提示。
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: player_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 玩家ID
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ban_reason:
+                  type: string
+                  description: 封禁理由，会展示给被封禁的玩家
+                  default: "违反游戏规则"
+                  example: "恶意刷取灵石"
+      responses:
+        "200":
+          description: 封禁成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+        "400":
+          description: 封禁失败
+        "404":
+          description: 玩家不存在
+
+  /api/xiuxian/players/{player_id}/unban:
+    post:
+      tags:
+        - 玩家管理
+      summary: 解封玩家（恢复软删除）
+      description: 将 is_deleted 标记重置为 0，恢复玩家正常使用权限
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: player_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 玩家ID
+      responses:
+        "200":
+          description: 解封成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+        "400":
+          description: 解封失败
+
+  # ==================== 物品管理 ====================
+  /api/xiuxian/items:
+    get:
+      tags:
+        - 物品管理
+      summary: 获取所有物品
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: 成功
+
+    post:
+      tags:
+        - 物品管理
+      summary: 创建物品
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItemCreateRequest"
+      responses:
+        "200":
+          description: 创建成功
+        "400":
+          description: 参数错误
+
+  /api/xiuxian/items/{item_id}:
+    post:
+      tags:
+        - 物品管理
+      summary: 更新物品
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: item_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 物品ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItemUpdateRequest"
+      responses:
+        "200":
+          description: 更新成功
+        "404":
+          description: 物品不存在
+
+  /api/xiuxian/items/{item_id}/delete:
+    post:
+      tags:
+        - 物品管理
+      summary: 删除物品
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: item_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 物品ID
+      responses:
+        "200":
+          description: 删除成功
+        "400":
+          description: 删除失败
+
+  # ==================== 功法管理 ====================
+  /api/xiuxian/skills:
+    get:
+      tags:
+        - 功法管理
+      summary: 获取所有功法
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: 成功
+
+    post:
+      tags:
+        - 功法管理
+      summary: 创建功法
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SkillCreateRequest"
+      responses:
+        "200":
+          description: 创建成功
+
+  /api/xiuxian/skills/{skill_id}:
+    post:
+      tags:
+        - 功法管理
+      summary: 更新功法
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: skill_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 功法ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SkillUpdateRequest"
+      responses:
+        "200":
+          description: 更新成功
+        "404":
+          description: 功法不存在
+
+  /api/xiuxian/skills/{skill_id}/delete:
+    post:
+      tags:
+        - 功法管理
+      summary: 删除功法
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: skill_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 功法ID
+      responses:
+        "200":
+          description: 删除成功
+        "400":
+          description: 删除失败
+
+  # ==================== 境界管理 ====================
+  /api/xiuxian/realms:
+    get:
+      tags:
+        - 境界管理
+      summary: 获取所有境界
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: 成功
+
+    post:
+      tags:
+        - 境界管理
+      summary: 创建境界
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RealmCreateRequest"
+      responses:
+        "200":
+          description: 创建成功
+
+  /api/xiuxian/realms/{realm_id}:
+    post:
+      tags:
+        - 境界管理
+      summary: 更新境界
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: realm_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 境界ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RealmUpdateRequest"
+      responses:
+        "200":
+          description: 更新成功
+        "404":
+          description: 境界不存在
+
+  /api/xiuxian/realms/{realm_id}/delete:
+    post:
+      tags:
+        - 境界管理
+      summary: 删除境界
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: realm_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 境界ID
+      responses:
+        "200":
+          description: 删除成功
+        "400":
+          description: 删除失败
+
+  # ==================== 事件管理 ====================
+  /api/xiuxian/events:
+    get:
+      tags:
+        - 事件管理
+      summary: 获取所有事件
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: 成功
+
+    post:
+      tags:
+        - 事件管理
+      summary: 创建事件
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EventCreateRequest"
+      responses:
+        "200":
+          description: 创建成功
+
+  /api/xiuxian/events/{event_id}:
+    post:
+      tags:
+        - 事件管理
+      summary: 更新事件
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 事件ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EventUpdateRequest"
+      responses:
+        "200":
+          description: 更新成功
+        "404":
+          description: 事件不存在
+
+  /api/xiuxian/events/{event_id}/delete:
+    post:
+      tags:
+        - 事件管理
+      summary: 删除事件
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 事件ID
+      responses:
+        "200":
+          description: 删除成功
+        "400":
+          description: 删除失败
+
+  # ==================== 配置管理 ====================
+  /api/xiuxian/config:
+    get:
+      tags:
+        - 配置管理
+      summary: 获取配置
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: 成功
+
+    post:
+      tags:
+        - 配置管理
+      summary: 更新配置
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: 配置键值对
+      responses:
+        "200":
+          description: 更新成功
+
+  # ==================== 闭关修炼 ====================
+  /api/xiuxian/seclusion/{player_id}/status:
+    get:
+      tags:
+        - 闭关修炼
+      summary: 获取玩家闭关状态
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: player_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 玩家ID
+      responses:
+        "200":
+          description: 成功
+
+  /api/xiuxian/seclusion/{player_id}/records:
+    get:
+      tags:
+        - 闭关修炼
+      summary: 获取玩家闭关记录
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: player_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 玩家ID
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+          description: 返回记录数量上限
+      responses:
+        "200":
+          description: 成功
+
+  # ==================== 丹毒管理 ====================
+  /api/xiuxian/pill/{player_id}/toxicity:
+    get:
+      tags:
+        - 丹毒管理
+      summary: 获取玩家丹毒状态
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: player_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 玩家ID
+      responses:
+        "200":
+          description: 成功
+
+  # ==================== 数据统计 ====================
+  /api/xiuxian/stats:
+    get:
+      tags:
+        - 数据统计
+      summary: 获取游戏统计数据
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: 通过登录接口获取的 Bearer Token
+
+  schemas:
+    ApiResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          description: 状态码，0表示成功
+          example: 0
+        message:
+          type: string
+          description: 提示信息
+          example: "操作成功"
+        data:
+          type: object
+          description: 响应数据
+
+    PlayerUpdateRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          description: 玩家名称
+        realm_id:
+          type: string
+          description: 境界ID
+        experience:
+          type: integer
+          description: 修为值
+        spirit_stone:
+          type: integer
+          description: 灵石数量
+        bone:
+          type: integer
+          description: 根骨
+        spirit:
+          type: integer
+          description: 神识
+        intel:
+          type: integer
+          description: 悟性
+        str:
+          type: integer
+          description: 体魄
+        percep:
+          type: integer
+          description: 灵觉
+        luck:
+          type: integer
+          description: 机缘
+        health:
+          type: integer
+          description: 当前气血
+        mp:
+          type: integer
+          description: 当前法力
+        stamina:
+          type: integer
+          description: 当前体力
+
+    ItemCreateRequest:
+      type: object
+      required:
+        - name
+        - item_type
+      properties:
+        id:
+          type: string
+          description: 物品ID（可选，自动生成）
+        name:
+          type: string
+          description: 物品名称
+        description:
+          type: string
+          description: 物品描述
+        item_type:
+          type: string
+          description: 物品类型
+          enum: [consumable, equipment, material, currency]
+        rarity:
+          type: string
+          description: 稀有度
+          enum: [common, uncommon, rare, epic, legendary]
+          default: common
+        effect_type:
+          type: string
+          description: 效果类型
+          enum: [heal, exp, attack, defense, spirit_stone, detox]
+        effect_value:
+          type: integer
+          description: 效果数值
+          default: 0
+        price:
+          type: integer
+          description: 价格
+          default: 0
+        is_usable:
+          type: boolean
+          description: 是否可使用
+          default: true
+        realm_requirement:
+          type: string
+          description: 使用所需最低境界ID
+
+    ItemUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        item_type:
+          type: string
+        rarity:
+          type: string
+        effect_type:
+          type: string
+        effect_value:
+          type: integer
+        price:
+          type: integer
+        is_usable:
+          type: boolean
+        realm_requirement:
+          type: string
+
+    SkillCreateRequest:
+      type: object
+      required:
+        - name
+        - skill_type
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        skill_type:
+          type: string
+          enum: [cultivation, combat, passive]
+        realm_requirement:
+          type: string
+        experience_gain:
+          type: integer
+          default: 10
+        damage:
+          type: integer
+          default: 0
+        cooldown:
+          type: integer
+          default: 0
+
+    SkillUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        skill_type:
+          type: string
+        realm_requirement:
+          type: string
+        experience_gain:
+          type: integer
+        damage:
+          type: integer
+        cooldown:
+          type: integer
+
+    RealmCreateRequest:
+      type: object
+      required:
+        - name
+        - level
+        - experience_required
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        level:
+          type: integer
+        experience_required:
+          type: integer
+        breakthrough_probability:
+          type: integer
+          default: 50
+        event_id:
+          type: integer
+          default: 1
+
+    RealmUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        level:
+          type: integer
+        experience_required:
+          type: integer
+        breakthrough_probability:
+          type: integer
+        event_id:
+          type: integer
+
+    EventCreateRequest:
+      type: object
+      required:
+        - name
+        - event_type
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        event_type:
+          type: string
+          enum: [explore, combat, random, quest]
+        trigger_condition:
+          type: string
+        reward_type:
+          type: string
+          enum: [item, spirit_stone, experience, health]
+        reward_value:
+          type: integer
+          default: 0
+        probability:
+          type: number
+          default: 0.5
+        is_active:
+          type: boolean
+          default: true
+
+    EventUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        event_type:
+          type: string
+        trigger_condition:
+          type: string
+        reward_type:
+          type: string
+        reward_value:
+          type: integer
+        probability:
+          type: number
+        is_active:
+          type: boolean
