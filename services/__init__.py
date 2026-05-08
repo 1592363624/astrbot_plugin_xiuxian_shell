@@ -8,6 +8,7 @@ from .combat_service import CombatService
 from .inventory_service import InventoryService
 from .event_service import EventService
 from .checkin_service import CheckinService
+from .notification_service import NotificationService
 
 __all__ = [
     "PlayerService",
@@ -16,4 +17,5 @@ __all__ = [
     "InventoryService",
     "EventService",
     "CheckinService",
+    "NotificationService",
 ]

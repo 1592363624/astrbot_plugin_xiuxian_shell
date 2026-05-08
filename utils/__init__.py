@@ -5,8 +5,6 @@
 from .helpers import generate_id, format_number, calculate_level
 from .attributes import (
     calc_battle_attrs,
-    allocate_base_attrs,
-    generate_luck,
     parse_realm_level,
     calc_realm_multiplier,
 )
@@ -16,8 +14,6 @@ __all__ = [
     "format_number",
     "calculate_level",
     "calc_battle_attrs",
-    "allocate_base_attrs",
-    "generate_luck",
     "parse_realm_level",
     "calc_realm_multiplier",
 ]

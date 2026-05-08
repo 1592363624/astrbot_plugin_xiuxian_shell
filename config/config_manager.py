@@ -50,6 +50,13 @@ class ConfigManager:
             {"id": "realm_008", "name": "大乘期", "level": 8, "exp_required": 2000000},
             {"id": "realm_009", "name": "渡劫期", "level": 9, "exp_required": 10000000},
         ],
+        "notification": {
+            "enabled": True,
+            "max_title_length": 50,
+            "max_content_length": 500,
+            "history_page_size": 20,
+            "history_max_pages": 50,
+        },
         "items": [
             {
                 "id": "item_001",

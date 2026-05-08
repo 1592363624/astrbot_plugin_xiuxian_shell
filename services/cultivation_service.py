@@ -115,7 +115,6 @@ class CultivationService:
         # 执行突破
         import random
         if random.random() < success_rate:
-            # 突破成功，根据新境界和基础属性重新计算战斗属性
             from ..utils import calc_battle_attrs
             new_attrs = calc_battle_attrs(
                 next_realm.level,
@@ -126,26 +125,20 @@ class CultivationService:
                 player["percep"],
                 player["luck"],
             )
-            
+
             await self.db.execute(
                 """UPDATE players 
                 SET realm_id = ?, 
-                    max_health = ?, health = ?,
-                    max_mp = ?, mp = ?,
-                    max_stamina = ?, stamina = ?,
-                    attack = ?, magic_attack = ?,
-                    defense = ?, magic_defense = ?,
-                    speed = ?, dodge = ?,
+                    health = ?,
+                    mp = ?,
+                    stamina = ?,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?""",
                 (
                     next_realm.id,
-                    new_attrs["max_health"], new_attrs["health"],
-                    new_attrs["max_mp"], new_attrs["mp"],
-                    new_attrs["max_stamina"], new_attrs["stamina"],
-                    new_attrs["attack"], new_attrs["magic_attack"],
-                    new_attrs["defense"], new_attrs["magic_defense"],
-                    new_attrs["speed"], new_attrs["dodge"],
+                    new_attrs["max_health"],
+                    new_attrs["max_mp"],
+                    new_attrs["max_stamina"],
                     player_id,
                 )
             )

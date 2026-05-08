@@ -175,21 +175,25 @@ class InventoryService:
         }
 
     async def _apply_item_effect(self, player_id: str, item: Item) -> str:
-        """
-        应用物品效果
-        
-        Args:
-            player_id: 玩家ID
-            item: 物品对象
-            
-        Returns:
-            str: 效果描述
-        """
         if item.effect_type == "heal":
-            # 恢复生命值
+            player = await self.db.fetch_one(
+                "SELECT p.*, r.level as realm_level FROM players p JOIN realms r ON p.realm_id = r.id WHERE p.id = ?",
+                (player_id,)
+            )
+            if player:
+                from ..utils.attributes import calc_battle_attrs
+                battle_attrs = calc_battle_attrs(
+                    level=player["realm_level"],
+                    bone=player["bone"], spirit=player["spirit"],
+                    intel=player["intel"], str_=player["str"],
+                    percep=player["percep"], luck=player["luck"],
+                )
+                max_health = battle_attrs["max_health"]
+            else:
+                max_health = 100
             await self.db.execute(
-                "UPDATE players SET health = MIN(max_health, health + ?) WHERE id = ?",
-                (item.effect_value, player_id)
+                "UPDATE players SET health = MIN(?, health + ?) WHERE id = ?",
+                (max_health, item.effect_value, player_id)
             )
             await self.db.commit()
             return f"恢复了 {item.effect_value} 点生命值"
