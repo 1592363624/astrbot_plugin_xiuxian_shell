@@ -24,14 +24,6 @@ from .services import (
 from .api import PlayerAPI, ItemAPI, CultivationAPI, AdminAPI, CheckinAPI, NotificationAPI
 from .admin_server import AdminServer
 
-
-@register(
-    "astrbot_plugin_xiuxian_shell",
-    "xiuxian_dev",
-    "重生之凡人修仙",
-    "0.0.1",
-    "https://github.com/1592363624/astrbot_plugin_xiuxian_shell",
-)
 class XiuxianPlugin(Star):
     """修仙游戏插件主类"""
 
