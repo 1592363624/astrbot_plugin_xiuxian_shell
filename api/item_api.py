@@ -3,7 +3,7 @@
 提供物品和背包相关的接口
 """
 from typing import Dict, Any
-from aiohttp import web
+
 from ..services import InventoryService, PlayerService
 
 
@@ -13,7 +13,7 @@ class ItemAPI:
     def __init__(self, inventory_service: InventoryService, player_service: PlayerService):
         """
         初始化物品API
-        
+
         Args:
             inventory_service: 背包服务实例
             player_service: 玩家服务实例
@@ -24,12 +24,12 @@ class ItemAPI:
     async def get_inventory(self, user_id: str) -> str:
         """
         获取玩家背包
-        
+
         Args:
             user_id: 用户ID
-            
+
         Returns:
-            str: 背包信息
+            背包信息
         """
         player_dict, error = await self.player_service.check_player_registered(user_id)
         if error:
@@ -57,13 +57,13 @@ class ItemAPI:
     async def use_item(self, user_id: str, item_name: str) -> str:
         """
         使用物品
-        
+
         Args:
             user_id: 用户ID
             item_name: 物品名称
-            
+
         Returns:
-            str: 使用结果
+            使用结果
         """
         if not item_name:
             return "请指定要使用的物品名称，格式：使用物品 <名称>"
@@ -72,7 +72,6 @@ class ItemAPI:
         if error:
             return error
 
-        # 根据名称查找物品
         item = await self.inventory_service.get_item_by_name(item_name)
         if not item:
             return f"找不到物品【{item_name}】"
@@ -84,39 +83,3 @@ class ItemAPI:
             return str(e)
         except Exception as e:
             return f"使用物品失败：{str(e)}"
-
-    # ==================== HTTP API接口 ====================
-
-    async def api_get_all_items(self, request: web.Request) -> web.Response:
-        """获取所有物品（HTTP API）"""
-        items = await self.inventory_service.get_all_items()
-        return web.json_response({
-            "code": 0,
-            "data": [item.to_dict() for item in items],
-        })
-
-    async def api_create_item(self, request: web.Request) -> web.Response:
-        """创建物品（HTTP API）"""
-        data = await request.json()
-        try:
-            item = await self.inventory_service.create_item(data)
-            return web.json_response({"code": 0, "data": item.to_dict()})
-        except Exception as e:
-            return web.json_response({"code": -1, "message": str(e)}, status=400)
-
-    async def api_update_item(self, request: web.Request) -> web.Response:
-        """更新物品（HTTP API）"""
-        item_id = request.match_info["item_id"]
-        data = await request.json()
-        item = await self.inventory_service.update_item(item_id, **data)
-        if not item:
-            return web.json_response({"code": -1, "message": "物品不存在"}, status=404)
-        return web.json_response({"code": 0, "data": item.to_dict()})
-
-    async def api_delete_item(self, request: web.Request) -> web.Response:
-        """删除物品（HTTP API）"""
-        item_id = request.match_info["item_id"]
-        success = await self.inventory_service.delete_item(item_id)
-        if not success:
-            return web.json_response({"code": -1, "message": "删除失败"}, status=400)
-        return web.json_response({"code": 0, "message": "删除成功"})

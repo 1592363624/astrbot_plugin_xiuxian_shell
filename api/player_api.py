@@ -3,7 +3,7 @@
 提供玩家相关的接口，供命令层和后台管理调用
 """
 from typing import Dict, Any, Optional
-from aiohttp import web
+
 from ..services import PlayerService, EventService
 from ..utils.attributes import calc_battle_attrs
 
@@ -23,7 +23,7 @@ class PlayerAPI:
             player = await self.player_service.create_player(user_id, username)
             realm = await self.player_service.db.fetch_one(
                 "SELECT name FROM realms WHERE id = ?",
-                (player.realm_id,)
+                (player.realm_id,),
             )
             realm_name = realm["name"] if realm else "未知"
             return (
@@ -46,7 +46,7 @@ class PlayerAPI:
 
         realm = await self.player_service.db.fetch_one(
             "SELECT name, level FROM realms WHERE id = ?",
-            (player_dict["realm_id"],)
+            (player_dict["realm_id"],),
         )
         realm_name = realm["name"] if realm else "未知"
         realm_level = realm["level"] if realm else 1
@@ -104,33 +104,3 @@ class PlayerAPI:
         if error:
             return f"修改失败：{error}"
         return f"道号修改成功！你的新道号为：{result}"
-
-    # ==================== HTTP API接口 ====================
-
-    async def api_get_all_players(self, request: web.Request) -> web.Response:
-        page = int(request.query.get("page", 1))
-        page_size = int(request.query.get("page_size", 20))
-        result = await self.player_service.get_all_players(page, page_size)
-        return web.json_response({"code": 0, "data": result})
-
-    async def api_get_player(self, request: web.Request) -> web.Response:
-        player_id = request.match_info["player_id"]
-        player = await self.player_service.get_player_by_id(player_id)
-        if not player:
-            return web.json_response({"code": -1, "message": "玩家不存在"}, status=404)
-        return web.json_response({"code": 0, "data": player.to_dict()})
-
-    async def api_update_player(self, request: web.Request) -> web.Response:
-        player_id = request.match_info["player_id"]
-        data = await request.json()
-        player = await self.player_service.update_player(player_id, **data)
-        if not player:
-            return web.json_response({"code": -1, "message": "玩家不存在"}, status=404)
-        return web.json_response({"code": 0, "data": player.to_dict()})
-
-    async def api_delete_player(self, request: web.Request) -> web.Response:
-        player_id = request.match_info["player_id"]
-        success = await self.player_service.delete_player(player_id)
-        if not success:
-            return web.json_response({"code": -1, "message": "删除失败"}, status=400)
-        return web.json_response({"code": 0, "message": "删除成功"})

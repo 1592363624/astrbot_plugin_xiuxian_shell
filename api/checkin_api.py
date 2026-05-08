@@ -1,9 +1,11 @@
 """
 签到API
 提供签到相关的接口，供命令层和后台管理调用
+HTTP处理方法兼容AstrBot Dashboard(Quart)路由分发机制
 """
 from typing import Dict, Any
-from aiohttp import web
+from quart import jsonify, request
+
 from ..services import CheckinService, PlayerService
 
 
@@ -29,7 +31,7 @@ class CheckinAPI:
             user_id: 用户ID
 
         Returns:
-            str: 签到结果消息
+            签到结果消息
         """
         player_dict, error = await self.player_service.check_player_registered(user_id)
         if error:
@@ -49,7 +51,7 @@ class CheckinAPI:
             user_id: 用户ID
 
         Returns:
-            str: 签到状态消息
+            签到状态消息
         """
         player_dict, error = await self.player_service.check_player_registered(user_id)
         if error:
@@ -87,7 +89,7 @@ class CheckinAPI:
             user_id: 用户ID
 
         Returns:
-            str: 排行消息
+            排行消息
         """
         player_dict, error = await self.player_service.check_player_registered(user_id)
         if error:
@@ -109,55 +111,46 @@ class CheckinAPI:
         except Exception as e:
             return f"查询失败：{str(e)}"
 
-    # ==================== HTTP API接口 ====================
+    # ==================== HTTP API接口（Quart兼容） ====================
 
-    async def api_checkin(self, request: web.Request) -> web.Response:
-        """执行签到（HTTP API）"""
-        data = await request.json()
-        player_id = data.get("player_id")
-        if not player_id:
-            return web.json_response({"code": -1, "message": "缺少 player_id"}, status=400)
-
-        try:
-            result = await self.checkin_service.checkin(player_id)
-            return web.json_response({"code": 0, "data": result})
-        except Exception as e:
-            return web.json_response({"code": -1, "message": str(e)}, status=400)
-
-    async def api_get_status(self, request: web.Request) -> web.Response:
+    async def api_get_status(self, player_id=None, **kwargs) -> Dict[str, Any]:
         """获取签到状态（HTTP API）"""
-        player_id = request.match_info["player_id"]
+        if player_id is None:
+            return jsonify({"code": -1, "message": "缺少player_id"}), 400
+
         try:
             status = await self.checkin_service.get_checkin_status(player_id)
-            return web.json_response({"code": 0, "data": status})
+            return jsonify({"code": 0, "data": status})
         except Exception as e:
-            return web.json_response({"code": -1, "message": str(e)}, status=400)
+            return jsonify({"code": -1, "message": str(e)}), 400
 
-    async def api_get_records(self, request: web.Request) -> web.Response:
+    async def api_get_records(self, player_id=None, **kwargs) -> Dict[str, Any]:
         """获取玩家签到记录（HTTP API）"""
-        player_id = request.match_info["player_id"]
-        limit = int(request.query.get("limit", 30))
+        if player_id is None:
+            return jsonify({"code": -1, "message": "缺少player_id"}), 400
+
+        limit = int(request.args.get("limit", 30))
         try:
             records = await self.checkin_service.get_player_checkin_records(player_id, limit)
-            return web.json_response({"code": 0, "data": records})
+            return jsonify({"code": 0, "data": records})
         except Exception as e:
-            return web.json_response({"code": -1, "message": str(e)}, status=400)
+            return jsonify({"code": -1, "message": str(e)}), 400
 
-    async def api_get_ranking(self, request: web.Request) -> web.Response:
+    async def api_get_ranking(self, **kwargs) -> Dict[str, Any]:
         """获取签到排行（HTTP API）"""
-        limit = int(request.query.get("limit", 10))
+        limit = int(request.args.get("limit", 10))
         try:
             ranking = await self.checkin_service.get_checkin_ranking(limit)
-            return web.json_response({"code": 0, "data": ranking})
+            return jsonify({"code": 0, "data": ranking})
         except Exception as e:
-            return web.json_response({"code": -1, "message": str(e)}, status=400)
+            return jsonify({"code": -1, "message": str(e)}), 400
 
-    async def api_get_all_records(self, request: web.Request) -> web.Response:
+    async def api_get_all_records(self, **kwargs) -> Dict[str, Any]:
         """获取所有签到记录（HTTP API，后台管理用）"""
-        page = int(request.query.get("page", 1))
-        page_size = int(request.query.get("page_size", 20))
+        page = int(request.args.get("page", 1))
+        page_size = int(request.args.get("page_size", 20))
         try:
             result = await self.checkin_service.get_all_checkin_records(page, page_size)
-            return web.json_response({"code": 0, "data": result})
+            return jsonify({"code": 0, "data": result})
         except Exception as e:
-            return web.json_response({"code": -1, "message": str(e)}, status=400)
+            return jsonify({"code": -1, "message": str(e)}), 400

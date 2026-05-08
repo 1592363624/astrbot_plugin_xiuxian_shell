@@ -355,3 +355,413 @@ class NotificationService:
         )
         await self.db.commit()
         return cursor.rowcount > 0
+
+    # ==================== 通知模板 ====================
+
+    def render_template(self, template_id: str, variables: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+        """
+        渲染通知模板，用变量替换模板中的占位符
+
+        Args:
+            template_id: 模板ID
+            variables: 变量字典，用于替换模板中的 {key} 占位符
+
+        Returns:
+            (标题, 内容) 元组，如果模板不存在则返回 (None, None)
+
+        Example:
+            >>> title, content = svc.render_template("breakthrough_success", {"realm": "金丹期", "username": "张三"})
+            >>> # title = "突破成功", content = "恭喜张三突破至金丹期！"
+        """
+        templates = self.config_manager.get("notification.templates", [])
+        for tpl in templates:
+            if tpl.get("id") == template_id:
+                title = tpl.get("title_template", "")
+                content = tpl.get("content_template", "")
+                try:
+                    title = title.format(**variables)
+                    content = content.format(**variables)
+                except KeyError as e:
+                    logger.warning(f"模板变量缺失: {e}, 模板ID: {template_id}")
+                return title, content
+        return None, None
+
+    def get_all_templates(self) -> List[Dict[str, Any]]:
+        """
+        获取所有通知模板
+
+        Returns:
+            模板列表
+        """
+        return self.config_manager.get("notification.templates", [])
+
+    async def send_notification_by_template(
+        self,
+        template_id: str,
+        variables: Dict[str, Any],
+        target_type: str = "all",
+        target_ids: Optional[List[str]] = None,
+        sender_id: str = "system",
+    ) -> Dict[str, Any]:
+        """
+        使用模板发送通知
+
+        Args:
+            template_id: 模板ID
+            variables: 模板变量字典
+            target_type: 目标类型
+            target_ids: 目标ID列表
+            sender_id: 发送者ID
+
+        Returns:
+            发送结果字典
+        """
+        title, content = self.render_template(template_id, variables)
+        if title is None:
+            return {"success": False, "error": f"通知模板 {template_id} 不存在"}
+
+        return await self.send_notification(
+            title=title,
+            content=content,
+            target_type=target_type,
+            target_ids=target_ids,
+            sender_id=sender_id,
+        )
+
+    # ==================== 定时通知管理 ====================
+
+    async def create_scheduled_notification(
+        self,
+        title: str,
+        content: str,
+        cron_expression: str,
+        target_type: str = "all",
+        target_ids: Optional[List[str]] = None,
+        template_id: Optional[str] = None,
+        template_variables: Optional[Dict[str, Any]] = None,
+        created_by: str = "system",
+    ) -> Dict[str, Any]:
+        """
+        创建定时通知
+
+        Args:
+            title: 通知标题
+            content: 通知内容
+            cron_expression: Cron表达式(分 时 日 月 周)
+            target_type: 目标类型
+            target_ids: 目标ID列表
+            template_id: 通知模板ID(可选)
+            template_variables: 模板变量(可选)
+            created_by: 创建者ID
+
+        Returns:
+            创建的定时通知记录字典
+        """
+        await self.db.execute(
+            """INSERT INTO scheduled_notifications
+            (title, content, target_type, target_ids, template_id, template_variables,
+             cron_expression, enabled, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+            (
+                title,
+                content,
+                target_type,
+                json.dumps(target_ids) if target_ids else None,
+                template_id,
+                json.dumps(template_variables) if template_variables else None,
+                cron_expression,
+                created_by,
+            ),
+        )
+        await self.db.commit()
+
+        record = await self.db.fetch_one(
+            "SELECT * FROM scheduled_notifications ORDER BY id DESC LIMIT 1"
+        )
+        return record
+
+    async def get_scheduled_notifications(
+        self, page: int = 1, page_size: int = 20
+    ) -> Dict[str, Any]:
+        """
+        获取定时通知列表（分页）
+
+        Args:
+            page: 页码
+            page_size: 每页数量
+
+        Returns:
+            分页结果字典
+        """
+        offset = (page - 1) * page_size
+
+        records = await self.db.fetch_all(
+            """SELECT * FROM scheduled_notifications
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?""",
+            (page_size, offset),
+        )
+
+        total = await self.db.fetch_one(
+            "SELECT COUNT(*) as count FROM scheduled_notifications"
+        )
+
+        return {
+            "items": records,
+            "total": total["count"] if total else 0,
+            "page": page,
+            "page_size": page_size,
+        }
+
+    async def get_scheduled_notification_by_id(self, schedule_id: int) -> Optional[Dict]:
+        """
+        根据ID获取定时通知
+
+        Args:
+            schedule_id: 定时通知ID
+
+        Returns:
+            定时通知记录字典或None
+        """
+        return await self.db.fetch_one(
+            "SELECT * FROM scheduled_notifications WHERE id = ?",
+            (schedule_id,),
+        )
+
+    async def toggle_scheduled_notification(self, schedule_id: int, enabled: bool) -> bool:
+        """
+        启用/禁用定时通知
+
+        Args:
+            schedule_id: 定时通知ID
+            enabled: 是否启用
+
+        Returns:
+            是否操作成功
+        """
+        cursor = await self.db.execute(
+            "UPDATE scheduled_notifications SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (1 if enabled else 0, schedule_id),
+        )
+        await self.db.commit()
+        return cursor.rowcount > 0
+
+    async def update_scheduled_notification(
+        self, schedule_id: int, **kwargs
+    ) -> Optional[Dict]:
+        """
+        更新定时通知
+
+        Args:
+            schedule_id: 定时通知ID
+            **kwargs: 要更新的字段
+
+        Returns:
+            更新后的记录字典或None
+        """
+        allowed_fields = {
+            "title", "content", "target_type", "target_ids",
+            "template_id", "template_variables", "cron_expression",
+        }
+        updates = {}
+        for field in allowed_fields:
+            if field in kwargs:
+                value = kwargs[field]
+                if field in ("target_ids", "template_variables") and value is not None:
+                    value = json.dumps(value)
+                updates[field] = value
+
+        if not updates:
+            return await self.get_scheduled_notification_by_id(schedule_id)
+
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        values = list(updates.values()) + [schedule_id]
+
+        await self.db.execute(
+            f"UPDATE scheduled_notifications SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            values,
+        )
+        await self.db.commit()
+
+        return await self.get_scheduled_notification_by_id(schedule_id)
+
+    async def delete_scheduled_notification(self, schedule_id: int) -> bool:
+        """
+        删除定时通知
+
+        Args:
+            schedule_id: 定时通知ID
+
+        Returns:
+            是否删除成功
+        """
+        cursor = await self.db.execute(
+            "DELETE FROM scheduled_notifications WHERE id = ?",
+            (schedule_id,),
+        )
+        await self.db.commit()
+        return cursor.rowcount > 0
+
+    async def get_due_scheduled_notifications(self) -> List[Dict[str, Any]]:
+        """
+        获取当前时间应该执行的定时通知
+
+        Returns:
+            到期的定时通知列表
+        """
+        from datetime import datetime
+
+        now = datetime.now()
+        current_min = now.minute
+        current_hour = now.hour
+        current_day = now.day
+        current_month = now.month
+        current_weekday = now.weekday()
+
+        all_enabled = await self.db.fetch_all(
+            "SELECT * FROM scheduled_notifications WHERE enabled = 1"
+        )
+
+        due = []
+        for record in all_enabled:
+            if self._cron_matches(
+                record["cron_expression"],
+                current_min, current_hour, current_day, current_month, current_weekday,
+            ):
+                last_run = record.get("last_run_at")
+                if last_run:
+                    try:
+                        last_dt = datetime.fromisoformat(str(last_run))
+                        if (now - last_dt).total_seconds() < 60:
+                            continue
+                    except (ValueError, TypeError):
+                        pass
+                due.append(record)
+
+        return due
+
+    def _cron_matches(
+        self,
+        cron_expr: str,
+        minute: int,
+        hour: int,
+        day: int,
+        month: int,
+        weekday: int,
+    ) -> bool:
+        """
+        判断当前时间是否匹配Cron表达式
+
+        Args:
+            cron_expr: Cron表达式(分 时 日 月 周)
+            minute: 当前分钟
+            hour: 当前小时
+            day: 当前日
+            month: 当前月
+            weekday: 当前星期(0=周一)
+
+        Returns:
+            是否匹配
+        """
+        parts = cron_expr.strip().split()
+        if len(parts) != 5:
+            return False
+
+        cron_weekday = weekday + 1 if weekday < 6 else 0
+
+        checks = [
+            (parts[0], minute),
+            (parts[1], hour),
+            (parts[2], day),
+            (parts[3], month),
+            (parts[4], cron_weekday),
+        ]
+
+        for cron_part, value in checks:
+            if not self._cron_field_matches(cron_part, value):
+                return False
+        return True
+
+    @staticmethod
+    def _cron_field_matches(field: str, value: int) -> bool:
+        """
+        判断Cron单个字段是否匹配
+
+        Args:
+            field: Cron字段表达式
+            value: 当前值
+
+        Returns:
+            是否匹配
+        """
+        if field == "*":
+            return True
+
+        for part in field.split(","):
+            if "-" in part:
+                start, end = part.split("-", 1)
+                if int(start) <= value <= int(end):
+                    return True
+            elif "/" in part:
+                base, step = part.split("/", 1)
+                base_val = 0 if base == "*" else int(base)
+                if value >= base_val and (value - base_val) % int(step) == 0:
+                    return True
+            else:
+                if value == int(part):
+                    return True
+        return False
+
+    async def execute_scheduled_notification(self, schedule_id: int) -> Dict[str, Any]:
+        """
+        执行定时通知
+
+        Args:
+            schedule_id: 定时通知ID
+
+        Returns:
+            执行结果字典
+        """
+        record = await self.get_scheduled_notification_by_id(schedule_id)
+        if not record:
+            return {"success": False, "error": "定时通知不存在"}
+
+        title = record["title"]
+        content = record["content"]
+
+        if record.get("template_id"):
+            variables = {}
+            if record.get("template_variables"):
+                try:
+                    variables = json.loads(record["template_variables"])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            tpl_title, tpl_content = self.render_template(record["template_id"], variables)
+            if tpl_title is not None:
+                title = tpl_title
+                content = tpl_content
+
+        target_ids = None
+        if record.get("target_ids"):
+            try:
+                target_ids = json.loads(record["target_ids"])
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        result = await self.send_notification(
+            title=title,
+            content=content,
+            target_type=record["target_type"],
+            target_ids=target_ids,
+            sender_id=f"scheduler:{schedule_id}",
+        )
+
+        await self.db.execute(
+            """UPDATE scheduled_notifications
+            SET last_run_at = CURRENT_TIMESTAMP, run_count = run_count + 1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?""",
+            (schedule_id,),
+        )
+        await self.db.commit()
+
+        return result

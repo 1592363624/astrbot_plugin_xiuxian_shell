@@ -6,6 +6,7 @@ AstrBot文字修仙游戏插件主入口
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
+from astrbot.core.star.filter.permission import PermissionType
 
 from .config import ConfigManager
 from .database import DatabaseManager, MigrationManager
@@ -77,14 +78,56 @@ class XiuxianPlugin(Star):
         await self.player_service.load_all_players_to_cache()
         # 注册后台管理API路由
         await self.setup_api_routes()
+        # 启动定时通知检查任务
+        self._start_scheduled_notification_checker()
         logger.info("重生之凡人修仙游戏插件初始化完成")
 
     async def terminate(self):
         """插件卸载"""
         logger.info("重生之凡人修仙游戏插件卸载中...")
+        # 停止定时通知检查任务
+        self._stop_scheduled_notification_checker()
         # 关闭数据库连接
         await self.db_manager.close()
         logger.info("重生之凡人修仙游戏插件已卸载")
+
+    # ==================== 定时通知检查 ====================
+
+    _scheduled_check_task = None
+
+    def _start_scheduled_notification_checker(self):
+        """启动定时通知检查后台任务"""
+        import asyncio
+
+        async def _check_loop():
+            while True:
+                try:
+                    await asyncio.sleep(60)
+                    due_list = await self.notification_service.get_due_scheduled_notifications()
+                    for record in due_list:
+                        try:
+                            result = await self.notification_service.execute_scheduled_notification(
+                                record["id"]
+                            )
+                            logger.info(
+                                f"定时通知 {record['id']}({record['title']}) 执行结果: "
+                                f"成功{result.get('sent_count', 0)}人, 失败{result.get('fail_count', 0)}人"
+                            )
+                        except Exception as e:
+                            logger.error(f"定时通知 {record['id']} 执行失败: {e}")
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    logger.error(f"定时通知检查循环异常: {e}")
+
+        self._scheduled_check_task = asyncio.ensure_future(_check_loop())
+        logger.info("定时通知检查任务已启动（每60秒检查一次）")
+
+    def _stop_scheduled_notification_checker(self):
+        """停止定时通知检查后台任务"""
+        if self._scheduled_check_task and not self._scheduled_check_task.done():
+            self._scheduled_check_task.cancel()
+            logger.info("定时通知检查任务已停止")
 
     # ==================== 事件监听区域 ====================
 
@@ -195,18 +238,20 @@ class XiuxianPlugin(Star):
 修仙签到 - 每日签到获取修为奖励
 签到状态 - 查看签到状态和奖励规则
 签到排行 - 查看签到排行榜
-发送公告 <标题> | <内容> - 发送公告给所有玩家
-发送通知 <标题> | <内容> | <用户ID> - 发送通知给指定玩家
-通知历史 - 查看通知历史记录
+发送公告 <标题> | <内容> - 发送公告给所有玩家(管理员)
+发送通知 <标题> | <内容> | <用户ID> - 发送通知给指定玩家(管理员)
+通知历史 - 查看通知历史记录(管理员)
+定时通知 列表/创建/开启/关闭/删除 - 管理定时通知(管理员)
 修仙帮助 - 显示本帮助
         """
         yield event.plain_result(help_text.strip())
 
-    # ==================== 通知命令区域 ====================
+    # ==================== 通知命令区域（管理员） ====================
 
+    @filter.permission_type(PermissionType.ADMIN)
     @filter.command("发送公告")
     async def send_announcement(self, event: AstrMessageEvent):
-        """发送公告给所有玩家，示例：发送公告 系统维护 | 今晚8点维护"""
+        """发送公告给所有玩家（管理员），示例：发送公告 系统维护 | 今晚8点维护"""
         user_id = event.get_sender_id()
         message = event.get_message_str().replace("发送公告", "").strip()
 
@@ -233,9 +278,10 @@ class XiuxianPlugin(Star):
                 f"公告发送成功！已发送给{result.get('sent_count', 0)}名玩家"
             )
 
+    @filter.permission_type(PermissionType.ADMIN)
     @filter.command("发送通知")
     async def send_notification_cmd(self, event: AstrMessageEvent):
-        """发送通知给指定玩家，示例：发送通知 活动提醒 | 限时双倍修为 | user123"""
+        """发送通知给指定玩家（管理员），示例：发送通知 活动提醒 | 限时双倍修为 | user123"""
         user_id = event.get_sender_id()
         message = event.get_message_str().replace("发送通知", "").strip()
 
@@ -267,9 +313,10 @@ class XiuxianPlugin(Star):
         else:
             yield event.plain_result(f"通知发送成功！已发送给玩家{target_id}")
 
+    @filter.permission_type(PermissionType.ADMIN)
     @filter.command("通知历史")
     async def notification_history(self, event: AstrMessageEvent):
-        """查看通知历史"""
+        """查看通知历史（管理员）"""
         result = await self.notification_api.get_notification_history(
             page=1, page_size=10
         )
@@ -295,6 +342,115 @@ class XiuxianPlugin(Star):
             )
 
         yield event.plain_result(history_text.strip())
+
+    @filter.permission_type(PermissionType.ADMIN)
+    @filter.command("定时通知")
+    async def scheduled_notification(self, event: AstrMessageEvent):
+        """管理定时通知（管理员），示例：定时通知 列表 / 定时通知 创建 标题|内容|cron / 定时通知 开启 1 / 定时通知 关闭 1 / 定时通知 删除 1"""
+        message = event.get_message_str().replace("定时通知", "").strip()
+
+        if not message or message == "列表":
+            result = await self.notification_api.get_scheduled_notifications(page=1, page_size=10)
+            items = result.get("data", {}).get("items", [])
+            if not items:
+                yield event.plain_result("暂无定时通知")
+                return
+
+            text = "【定时通知列表】\n"
+            for item in items:
+                status = "✅启用" if item["enabled"] else "❌禁用"
+                text += (
+                    f"{item['id']}. {item['title']} [{status}]\n"
+                    f"   Cron: {item['cron_expression']}，已执行{item['run_count']}次\n"
+                )
+            yield event.plain_result(text.strip())
+            return
+
+        parts = message.split(None, 1)
+        action = parts[0]
+
+        if action == "创建":
+            if len(parts) < 2:
+                yield event.plain_result("格式：定时通知 创建 <标题>|<内容>|<Cron表达式>\n示例：定时通知 创建 每日提醒|记得修炼|0 8 * * *")
+                return
+
+            create_parts = parts[1].split("|", 2)
+            if len(create_parts) < 3:
+                yield event.plain_result("格式：定时通知 创建 <标题>|<内容>|<Cron表达式>")
+                return
+
+            title = create_parts[0].strip()
+            content = create_parts[1].strip()
+            cron_expr = create_parts[2].strip()
+
+            result = await self.notification_api.create_scheduled_notification(
+                title=title, content=content, cron_expression=cron_expr,
+                created_by=event.get_sender_id(),
+            )
+
+            if not result.get("success", False):
+                yield event.plain_result(f"创建失败：{result.get('error', '未知错误')}")
+            else:
+                yield event.plain_result(f"定时通知创建成功！ID: {result['data']['id']}")
+
+        elif action in ("开启", "启用"):
+            if len(parts) < 2:
+                yield event.plain_result("格式：定时通知 开启 <ID>")
+                return
+            try:
+                schedule_id = int(parts[1].strip())
+            except ValueError:
+                yield event.plain_result("ID必须为数字")
+                return
+
+            result = await self.notification_api.toggle_scheduled_notification(schedule_id, True)
+            if not result.get("success", False):
+                yield event.plain_result(f"操作失败：{result.get('error', '未知错误')}")
+            else:
+                yield event.plain_result(f"定时通知 {schedule_id} 已启用")
+
+        elif action in ("关闭", "禁用"):
+            if len(parts) < 2:
+                yield event.plain_result("格式：定时通知 关闭 <ID>")
+                return
+            try:
+                schedule_id = int(parts[1].strip())
+            except ValueError:
+                yield event.plain_result("ID必须为数字")
+                return
+
+            result = await self.notification_api.toggle_scheduled_notification(schedule_id, False)
+            if not result.get("success", False):
+                yield event.plain_result(f"操作失败：{result.get('error', '未知错误')}")
+            else:
+                yield event.plain_result(f"定时通知 {schedule_id} 已禁用")
+
+        elif action == "删除":
+            if len(parts) < 2:
+                yield event.plain_result("格式：定时通知 删除 <ID>")
+                return
+            try:
+                schedule_id = int(parts[1].strip())
+            except ValueError:
+                yield event.plain_result("ID必须为数字")
+                return
+
+            result = await self.notification_api.delete_scheduled_notification(schedule_id)
+            if not result.get("success", False):
+                yield event.plain_result(f"删除失败：{result.get('error', '未知错误')}")
+            else:
+                yield event.plain_result(f"定时通知 {schedule_id} 已删除")
+
+        else:
+            yield event.plain_result(
+                "可用操作：列表、创建、开启、关闭、删除\n"
+                "示例：\n"
+                "定时通知 列表\n"
+                "定时通知 创建 每日提醒|记得修炼|0 8 * * *\n"
+                "定时通知 开启 1\n"
+                "定时通知 关闭 1\n"
+                "定时通知 删除 1"
+            )
 
     # ==================== 后台管理API路由 ====================
 
@@ -508,6 +664,42 @@ class XiuxianPlugin(Star):
             self.notification_api.handle_get_sessions,
             ["GET"],
             "获取所有玩家会话信息",
+        )
+        self.context.register_web_api(
+            "/api/xiuxian/notifications/send-template",
+            self.notification_api.handle_send_by_template,
+            ["POST"],
+            "使用模板发送通知",
+        )
+        self.context.register_web_api(
+            "/api/xiuxian/notifications/templates",
+            self.notification_api.handle_get_templates,
+            ["GET"],
+            "获取所有通知模板",
+        )
+        self.context.register_web_api(
+            "/api/xiuxian/notifications/scheduled",
+            self.notification_api.handle_create_scheduled,
+            ["POST"],
+            "创建定时通知",
+        )
+        self.context.register_web_api(
+            "/api/xiuxian/notifications/scheduled",
+            self.notification_api.handle_get_scheduled,
+            ["GET"],
+            "获取定时通知列表",
+        )
+        self.context.register_web_api(
+            "/api/xiuxian/notifications/scheduled/{schedule_id}/toggle",
+            self.notification_api.handle_toggle_scheduled,
+            ["PUT"],
+            "启用/禁用定时通知",
+        )
+        self.context.register_web_api(
+            "/api/xiuxian/notifications/scheduled/{schedule_id}",
+            self.notification_api.handle_delete_scheduled,
+            ["DELETE"],
+            "删除定时通知",
         )
 
         logger.info("修仙游戏后台管理API路由已注册")

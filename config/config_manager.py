@@ -56,6 +56,32 @@ class ConfigManager:
             "max_content_length": 500,
             "history_page_size": 20,
             "history_max_pages": 50,
+            "templates": [
+                {
+                    "id": "breakthrough_success",
+                    "name": "突破成功通知",
+                    "title_template": "突破成功",
+                    "content_template": "恭喜{username}突破至{realm}！修仙之路更进一步。",
+                },
+                {
+                    "id": "tribulation_coming",
+                    "name": "渡劫预警",
+                    "title_template": "天劫预警",
+                    "content_template": "{username}，你的修为已至{realm}巅峰，天劫将至，请做好准备！",
+                },
+                {
+                    "id": "system_maintenance",
+                    "name": "系统维护公告",
+                    "title_template": "系统维护通知",
+                    "content_template": "修仙界将于{time}进行维护，预计持续{duration}，届时将暂时无法修炼，请各位道友提前做好准备。",
+                },
+                {
+                    "id": "event_announcement",
+                    "name": "活动公告",
+                    "title_template": "修仙活动：{event_name}",
+                    "content_template": "{event_description}\n活动时间：{start_time} 至 {end_time}\n参与即可获得丰厚奖励！",
+                },
+            ],
         },
         "items": [
             {
