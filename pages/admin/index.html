@@ -552,12 +552,20 @@ const Api = {
   _bridge: null,
   _bridgeReady: false,
   _useBridge: false,
+  _authFailed: false,
+  _token: localStorage.getItem('xiuxian_admin_token') || '',
+  _baseUrl: '',
+  _isStandalone: false,
 
   async init() {
     DebugLog.log('Api.init 开始');
     DebugLog.log('AstrBotPluginPage 存在: ' + !!window.AstrBotPluginPage);
 
-    if (window.AstrBotPluginPage) {
+    // 检测运行环境：独立服务器或AstrBot插件
+    this._detectEnvironment();
+
+    // 如果是AstrBot插件环境且Bridge SDK可用，优先使用Bridge
+    if (!this._isStandalone && window.AstrBotPluginPage) {
       try {
         const readyPromise = window.AstrBotPluginPage.ready();
         const timeoutPromise = new Promise((_, reject) =>
@@ -576,13 +584,69 @@ const Api = {
     }
 
     if (!this._useBridge) {
-      DebugLog.log('使用 fetch 降级模式');
+      DebugLog.log('使用 fetch 模式，环境: ' + (this._isStandalone ? '独立服务器' : 'AstrBot插件(降级)'));
+      if (this._token) {
+        DebugLog.log('已存在本地token，尝试使用');
+      }
       try {
         const testRes = await this._fetchGet('api/xiuxian/stats', {});
-        DebugLog.log('fetch 测试成功: code=' + (testRes ? testRes.code : 'null'));
+        DebugLog.log('fetch 测试: code=' + (testRes ? testRes.code : 'null'));
+        if (testRes && testRes.code === 401) {
+          this._authFailed = true;
+        }
       } catch(e) {
         DebugLog.error('fetch 测试失败: ' + e.message);
       }
+    }
+  },
+
+  _detectEnvironment() {
+    // 如果当前页面URL不是以 /api/plug 或 /api/plugin 开头，认为是独立服务器
+    const path = window.location.pathname;
+    this._isStandalone = !path.startsWith('/api/plug') && !path.startsWith('/api/plugin');
+    if (this._isStandalone) {
+      this._baseUrl = '';
+      DebugLog.log('检测到独立服务器环境');
+    } else {
+      this._baseUrl = '/api/plug';
+      DebugLog.log('检测到AstrBot插件环境');
+    }
+  },
+
+  setToken(token) {
+    this._token = token;
+    localStorage.setItem('xiuxian_admin_token', token);
+  },
+
+  clearToken() {
+    this._token = '';
+    localStorage.removeItem('xiuxian_admin_token');
+  },
+
+  async login(username, password) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+      // 独立服务器使用独立登录接口，AstrBot使用Dashboard登录接口
+      const loginUrl = this._isStandalone ? '/api/xiuxian/auth/login' : '/api/auth/login';
+      const resp = await fetch(loginUrl, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({username, password}),
+        signal: controller.signal,
+        credentials: 'include'
+      });
+      clearTimeout(timer);
+      if (!resp.ok) return { code: -1, message: 'HTTP ' + resp.status };
+      const data = await resp.json();
+      if (data.code === 0 && data.data && data.data.token) {
+        this.setToken(data.data.token);
+        return { code: 0, data: data.data };
+      }
+      return { code: data.code || -1, message: data.message || '登录失败' };
+    } catch(e) {
+      clearTimeout(timer);
+      return { code: -1, message: e.name === 'AbortError' ? '请求超时' : e.message };
     }
   },
 
@@ -596,6 +660,10 @@ const Api = {
   _normalize(res) {
     if (res === null || res === undefined) return { code: -1, message: '空响应' };
     if (typeof res === 'object' && res.code !== undefined) return res;
+    // 兼容 AstrBot Response 格式 {status: 'ok', data: ...}
+    if (typeof res === 'object' && res.status !== undefined) {
+      return { code: res.status === 'ok' ? 0 : -1, data: res.data, message: res.message };
+    }
     return { code: 0, data: res };
   },
 
@@ -609,14 +677,34 @@ const Api = {
     return this._normalize(r);
   },
 
+  _getHeaders() {
+    const headers = {'Content-Type':'application/json'};
+    if (this._token) headers['Authorization'] = 'Bearer ' + this._token;
+    return headers;
+  },
+
+  _buildUrl(path) {
+    // 独立服务器直接使用path，AstrBot插件需要加 /api/plug 前缀
+    if (this._isStandalone) {
+      return path.startsWith('/') ? path : '/' + path;
+    }
+    return `/api/plug/${path}`;
+  },
+
   async _fetchGet(path, params) {
     const qs = new URLSearchParams(params).toString();
-    const url = `/api/plug/${path}${qs ? '?' + qs : ''}`;
+    const url = this._buildUrl(path) + (qs ? '?' + qs : '');
+    DebugLog.log('GET ' + url + ' token=' + (this._token ? '有' : '无'));
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
     try {
-      const resp = await fetch(url, { signal: controller.signal });
+      const resp = await fetch(url, { signal: controller.signal, credentials: 'include', headers: this._getHeaders() });
       clearTimeout(timer);
+      DebugLog.log('GET ' + url + ' status=' + resp.status);
+      if (resp.status === 401) {
+        this._authFailed = true;
+        return { code: 401, message: '未登录或登录已过期' };
+      }
       if (!resp.ok) return { code: -1, message: 'HTTP ' + resp.status };
       return await resp.json();
     } catch(e) {
@@ -629,13 +717,18 @@ const Api = {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
     try {
-      const resp = await fetch(`/api/plug/${path}`, {
+      const resp = await fetch(this._buildUrl(path), {
         method: 'POST',
-        headers: {'Content-Type':'application/json'},
+        headers: this._getHeaders(),
         body: JSON.stringify(body),
-        signal: controller.signal
+        signal: controller.signal,
+        credentials: 'include'
       });
       clearTimeout(timer);
+      if (resp.status === 401) {
+        this._authFailed = true;
+        return { code: 401, message: '未登录或登录已过期' };
+      }
       if (!resp.ok) return { code: -1, message: 'HTTP ' + resp.status };
       return await resp.json();
     } catch(e) {
@@ -672,6 +765,10 @@ const Api = {
 
   async del(path) {
     return this.post(path + '/delete', {});
+  },
+
+  async changePassword(oldPassword, newPassword) {
+    return this.post('api/xiuxian/auth/change-password', { old_password: oldPassword, new_password: newPassword });
   },
 };
 
@@ -744,13 +841,16 @@ function createCrudModule(config) {
     if (res.code === 0) {
       const d = res.data;
       if (Array.isArray(d)) { _data = d; _total = d.length; }
-      else if (d && (d.items || d.list || d.records)) {
-        _data = d.items || d.list || d.records;
+      else if (d && (d.items || d.list || d.records || d.players)) {
+        _data = d.items || d.list || d.records || d.players;
         _total = d.total || _data.length;
       } else if (d && typeof d === 'object') { _data = [d]; _total = 1; }
       else { _data = []; _total = 0; }
     } else {
       _data = []; _total = 0;
+      if (res.code === 401) {
+        throw new Error(res.message || '未登录或登录已过期');
+      }
       if (res.code !== 0 && res.message) DebugLog.warn(name + ' 加载失败: ' + res.message);
     }
   }
@@ -879,6 +979,9 @@ ModuleRegistry.register({
       Api.get('api/xiuxian/stats'),
       Api.get('api/xiuxian/realms'),
     ]);
+    if (statsRes.code === 401 || realmsRes.code === 401) {
+      throw new Error('未登录或登录已过期');
+    }
     this._stats = statsRes;
     this._realms = realmsRes;
   },
@@ -1060,6 +1163,9 @@ ModuleRegistry.register({
       Api.get('api/xiuxian/checkin/records', { page: 1, page_size: 50 }),
       Api.get('api/xiuxian/checkin/ranking', { limit: 20 }),
     ]);
+    if (recordsRes.code === 401 || rankingRes.code === 401) {
+      throw new Error('未登录或登录已过期');
+    }
     this._data = recordsRes?.data?.items || recordsRes?.data?.records || (Array.isArray(recordsRes?.data) ? recordsRes.data : []);
     this._ranking = Array.isArray(rankingRes?.data) ? rankingRes.data : [];
   },
@@ -1092,6 +1198,9 @@ ModuleRegistry.register({
       Api.get('api/xiuxian/notifications/scheduled', { page: 1, page_size: 50 }),
       Api.get('api/xiuxian/notifications/sessions'),
     ]);
+    if (historyRes.code === 401 || templatesRes.code === 401 || scheduledRes.code === 401 || sessionsRes.code === 401) {
+      throw new Error('未登录或登录已过期');
+    }
     this._history = Array.isArray(historyRes?.data) ? historyRes.data : (historyRes?.data?.items || []);
     this._templates = Array.isArray(templatesRes?.data) ? templatesRes.data : [];
     this._scheduled = Array.isArray(scheduledRes?.data) ? scheduledRes.data : (scheduledRes?.data?.items || []);
@@ -1225,6 +1334,14 @@ ModuleRegistry.register({
     html += '<div class="card"><div class="card-header"><span class="card-title">原始配置(JSON)</span></div>';
     html += '<textarea class="form-textarea" id="cfg_raw_json" style="min-height:200px;font-family:Consolas,monospace;font-size:12px">' + Utils.escapeHtml(JSON.stringify(this._config, null, 2)) + '</textarea>';
     html += '<div style="margin-top:8px"><button class="btn btn-primary" onclick="ModuleRegistry.get(\'config\')._saveRawJson()">保存JSON配置</button></div></div>';
+    // 修改密码区域
+    html += '<div class="card"><div class="card-header"><span class="card-title">🔐 修改管理员密码</span></div><div style="padding:0 4px">';
+    html += '<div class="form-group"><label class="form-label">原密码</label><input class="form-input" type="password" id="pwd_old" placeholder="输入原密码"></div>';
+    html += '<div class="form-group"><label class="form-label">新密码</label><input class="form-input" type="password" id="pwd_new" placeholder="输入新密码(至少6位)"></div>';
+    html += '<div class="form-group"><label class="form-label">确认新密码</label><input class="form-input" type="password" id="pwd_confirm" placeholder="再次输入新密码"></div>';
+    html += '<button class="btn btn-primary" onclick="ModuleRegistry.get(\'config\')._changePassword()">修改密码</button>';
+    html += '<p id="pwd_msg" style="margin-top:8px;font-size:12px;display:none"></p>';
+    html += '</div></div>';
     return html;
   },
   _collectConfig() {
@@ -1258,6 +1375,36 @@ ModuleRegistry.register({
     } catch(e) { Toast.error('JSON格式错误: ' + e.message); }
   },
   async _refreshConfig() { await this.refresh(); App._renderModule('config'); Toast.info('配置已刷新'); },
+  async _changePassword() {
+    const oldPwd = document.getElementById('pwd_old')?.value;
+    const newPwd = document.getElementById('pwd_new')?.value;
+    const confirmPwd = document.getElementById('pwd_confirm')?.value;
+    const msgEl = document.getElementById('pwd_msg');
+    if (!oldPwd || !newPwd || !confirmPwd) {
+      if (msgEl) { msgEl.textContent = '请填写所有密码字段'; msgEl.style.color = 'var(--accent-red)'; msgEl.style.display = 'block'; }
+      return;
+    }
+    if (newPwd !== confirmPwd) {
+      if (msgEl) { msgEl.textContent = '两次输入的新密码不一致'; msgEl.style.color = 'var(--accent-red)'; msgEl.style.display = 'block'; }
+      return;
+    }
+    if (newPwd.length < 6) {
+      if (msgEl) { msgEl.textContent = '新密码长度不能少于6位'; msgEl.style.color = 'var(--accent-red)'; msgEl.style.display = 'block'; }
+      return;
+    }
+    const res = await Api.changePassword(oldPwd, newPwd);
+    if (res.code === 0) {
+      if (msgEl) { msgEl.textContent = '密码修改成功，请使用新密码重新登录'; msgEl.style.color = 'var(--accent-green)'; msgEl.style.display = 'block'; }
+      Toast.success('密码修改成功');
+      // 清空输入框
+      document.getElementById('pwd_old').value = '';
+      document.getElementById('pwd_new').value = '';
+      document.getElementById('pwd_confirm').value = '';
+    } else {
+      if (msgEl) { msgEl.textContent = res.message || '密码修改失败'; msgEl.style.color = 'var(--accent-red)'; msgEl.style.display = 'block'; }
+      Toast.error(res.message || '密码修改失败');
+    }
+  },
 });
 
 /* ===== 系统API模块 ===== */
@@ -1367,7 +1514,11 @@ const App = {
       this._renderModule(moduleId);
     } catch(e) {
       DebugLog.error('模块加载失败: ' + e.message);
-      document.getElementById('contentArea').innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><p>加载失败: ' + Utils.escapeHtml(e.message) + '</p><p style="margin-top:8px;font-size:11px">Bridge SDK: ' + (Api._useBridge ? '✅已连接' : '❌未连接') + '</p><button class="btn" style="margin-top:12px" onclick="App._switchModule(\'' + moduleId + '\')">重试</button></div>';
+      if (Api._authFailed) {
+        App._showLoginForm();
+      } else {
+        document.getElementById('contentArea').innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><p>加载失败: ' + Utils.escapeHtml(e.message) + '</p><p style="margin-top:8px;font-size:11px">Bridge SDK: ' + (Api._useBridge ? '✅已连接' : '❌未连接') + '</p><button class="btn" style="margin-top:12px" onclick="App._switchModule(\'' + moduleId + '\')">重试</button></div>';
+      }
     }
   },
 
@@ -1383,6 +1534,39 @@ const App = {
   },
 
   closeModal() { Modal.close(); },
+
+  _showLoginForm() {
+    document.getElementById('contentArea').innerHTML =
+      '<div class="card" style="max-width:400px;margin:40px auto;text-align:center">' +
+      '<div class="card-header" style="justify-content:center"><span class="card-title">🔐 修仙后台管理登录</span></div>' +
+      '<div style="padding:8px 4px">' +
+      '<div class="form-group"><label class="form-label">用户名</label><input class="form-input" id="login_user" value="admin" placeholder="用户名"></div>' +
+      '<div class="form-group"><label class="form-label">密码</label><input class="form-input" id="login_pass" type="password" placeholder="密码"></div>' +
+      '<button class="btn btn-primary" style="width:100%" onclick="App._doLogin()">登录</button>' +
+      '<p style="margin-top:12px;font-size:11px;color:var(--text-secondary)">默认账号: admin / 默认密码: xiuxian_admin</p>' +
+      '<p id="login_err" style="margin-top:8px;font-size:12px;color:var(--accent-red);display:none"></p>' +
+      '</div></div>';
+  },
+
+  async _doLogin() {
+    const user = document.getElementById('login_user')?.value?.trim();
+    const pass = document.getElementById('login_pass')?.value;
+    const errEl = document.getElementById('login_err');
+    if (!user || !pass) { if (errEl) { errEl.textContent = '用户名和密码不能为空'; errEl.style.display = 'block'; } return; }
+
+    const btn = document.querySelector('#contentArea button');
+    if (btn) { btn.disabled = true; btn.textContent = '登录中...'; }
+
+    const res = await Api.login(user, pass);
+    if (res.code === 0) {
+      Api._authFailed = false;
+      Toast.success('登录成功');
+      await this._switchModule('dashboard');
+    } else {
+      if (errEl) { errEl.textContent = res.message || '登录失败'; errEl.style.display = 'block'; }
+      if (btn) { btn.disabled = false; btn.textContent = '登录'; }
+    }
+  },
 
   _startAutoRefresh() {
     this._autoRefreshInterval = setInterval(async () => {

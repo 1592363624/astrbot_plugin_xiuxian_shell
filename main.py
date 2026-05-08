@@ -20,6 +20,7 @@ from .services import (
     NotificationService,
 )
 from .api import PlayerAPI, ItemAPI, CultivationAPI, AdminAPI, CheckinAPI, NotificationAPI
+from .admin_server import AdminServer
 
 
 @register(
@@ -66,6 +67,17 @@ class XiuxianPlugin(Star):
             self.event_service,
             self.config_manager,
         )
+        # 初始化独立管理服务器
+        admin_password = self.config_manager.get("admin_password", "xiuxian_admin")
+        admin_port = self.config_manager.get("admin_port", 6186)
+        self.admin_server = AdminServer(
+            self.admin_api,
+            self.checkin_api,
+            self.notification_api,
+            host="0.0.0.0",
+            port=admin_port,
+            password=admin_password,
+        )
 
     async def initialize(self):
         """插件初始化"""
@@ -78,6 +90,12 @@ class XiuxianPlugin(Star):
         await self.player_service.load_all_players_to_cache()
         # 注册后台管理API路由
         await self.setup_api_routes()
+        # 启动独立管理服务器
+        try:
+            actual_port = await self.admin_server.start()
+            logger.info(f"修仙后台管理独立服务器已启动，访问地址: http://localhost:{actual_port}")
+        except Exception as e:
+            logger.error(f"修仙后台管理独立服务器启动失败: {e}")
         # 启动定时通知检查任务
         self._start_scheduled_notification_checker()
         logger.info("重生之凡人修仙游戏插件初始化完成")
@@ -85,6 +103,11 @@ class XiuxianPlugin(Star):
     async def terminate(self):
         """插件卸载"""
         logger.info("重生之凡人修仙游戏插件卸载中...")
+        # 停止独立管理服务器
+        try:
+            await self.admin_server.stop()
+        except Exception as e:
+            logger.error(f"停止独立管理服务器失败: {e}")
         # 停止定时通知检查任务
         self._stop_scheduled_notification_checker()
         # 关闭数据库连接
@@ -458,88 +481,13 @@ class XiuxianPlugin(Star):
             )
 
     # ==================== 后台管理API路由 ====================
-
-    PLUGIN_NAME = "astrbot_plugin_xiuxian_shell"
-
-    def _reg_api(self, route: str, handler, methods: list, desc: str):
-        """注册API路由，同时注册原始路径和带插件名前缀的路径以兼容Bridge SDK"""
-        self.context.register_web_api(route, handler, methods, desc)
-        prefixed = f"/{self.PLUGIN_NAME}{route}"
-        if prefixed != route:
-            self.context.register_web_api(prefixed, handler, methods, desc)
+    # 注意：所有后台管理API已迁移到独立HTTP服务器(AdminServer)
+    # 独立服务器在插件初始化时自动启动，默认端口6186
+    # 访问地址: http://localhost:6186/
 
     async def setup_api_routes(self):
-        """设置后台管理API路由"""
-        reg = self._reg_api
-
-        # 玩家管理API
-        reg("/api/xiuxian/players", self.admin_api.get_all_players, ["GET"], "获取所有玩家列表")
-        reg("/api/xiuxian/players/{player_id}", self.admin_api.get_player_detail, ["GET"], "获取玩家详情")
-        reg("/api/xiuxian/players/{player_id}", self.admin_api.update_player, ["PUT", "POST"], "更新玩家信息")
-        reg("/api/xiuxian/players/{player_id}/delete", self.admin_api.delete_player, ["POST"], "删除玩家(POST兼容)")
-        reg("/api/xiuxian/players/{player_id}", self.admin_api.delete_player, ["DELETE"], "删除玩家")
-
-        # 物品管理API
-        reg("/api/xiuxian/items", self.admin_api.get_all_items, ["GET"], "获取所有物品列表")
-        reg("/api/xiuxian/items", self.admin_api.create_item, ["POST"], "创建物品")
-        reg("/api/xiuxian/items/{item_id}", self.admin_api.update_item, ["PUT", "POST"], "更新物品")
-        reg("/api/xiuxian/items/{item_id}/delete", self.admin_api.delete_item, ["POST"], "删除物品(POST兼容)")
-        reg("/api/xiuxian/items/{item_id}", self.admin_api.delete_item, ["DELETE"], "删除物品")
-
-        # 功法管理API
-        reg("/api/xiuxian/skills", self.admin_api.get_all_skills, ["GET"], "获取所有功法列表")
-        reg("/api/xiuxian/skills", self.admin_api.create_skill, ["POST"], "创建功法")
-        reg("/api/xiuxian/skills/{skill_id}", self.admin_api.update_skill, ["PUT", "POST"], "更新功法")
-        reg("/api/xiuxian/skills/{skill_id}/delete", self.admin_api.delete_skill, ["POST"], "删除功法(POST兼容)")
-        reg("/api/xiuxian/skills/{skill_id}", self.admin_api.delete_skill, ["DELETE"], "删除功法")
-
-        # 境界管理API
-        reg("/api/xiuxian/realms", self.admin_api.get_all_realms, ["GET"], "获取所有境界列表")
-        reg("/api/xiuxian/realms", self.admin_api.create_realm, ["POST"], "创建境界")
-        reg("/api/xiuxian/realms/{realm_id}", self.admin_api.update_realm, ["PUT", "POST"], "更新境界")
-        reg("/api/xiuxian/realms/{realm_id}/delete", self.admin_api.delete_realm, ["POST"], "删除境界(POST兼容)")
-        reg("/api/xiuxian/realms/{realm_id}", self.admin_api.delete_realm, ["DELETE"], "删除境界")
-
-        # 事件管理API
-        reg("/api/xiuxian/events", self.admin_api.get_all_events, ["GET"], "获取所有事件列表")
-        reg("/api/xiuxian/events", self.admin_api.create_event, ["POST"], "创建事件")
-        reg("/api/xiuxian/events/{event_id}", self.admin_api.update_event, ["PUT", "POST"], "更新事件")
-        reg("/api/xiuxian/events/{event_id}/delete", self.admin_api.delete_event, ["POST"], "删除事件(POST兼容)")
-        reg("/api/xiuxian/events/{event_id}", self.admin_api.delete_event, ["DELETE"], "删除事件")
-
-        # 配置管理API
-        reg("/api/xiuxian/config", self.admin_api.get_config, ["GET"], "获取插件配置")
-        reg("/api/xiuxian/config", self.admin_api.update_config, ["PUT", "POST"], "更新插件配置")
-
-        # 数据统计API
-        reg("/api/xiuxian/stats", self.admin_api.get_game_stats, ["GET"], "获取游戏统计数据")
-
-        # 闭关修炼API
-        reg("/api/xiuxian/seclusion/{player_id}/status", self.admin_api.get_seclusion_status, ["GET"], "获取玩家闭关状态")
-        reg("/api/xiuxian/seclusion/{player_id}/records", self.admin_api.get_seclusion_records, ["GET"], "获取玩家闭关记录")
-
-        # 丹毒管理API
-        reg("/api/xiuxian/pill/{player_id}/toxicity", self.admin_api.get_toxicity_status, ["GET"], "获取玩家丹毒状态")
-
-        # 签到管理API
-        reg("/api/xiuxian/checkin/records", self.checkin_api.api_get_all_records, ["GET"], "获取所有签到记录")
-        reg("/api/xiuxian/checkin/ranking", self.checkin_api.api_get_ranking, ["GET"], "获取签到排行")
-        reg("/api/xiuxian/checkin/{player_id}/status", self.checkin_api.api_get_status, ["GET"], "获取玩家签到状态")
-        reg("/api/xiuxian/checkin/{player_id}/records", self.checkin_api.api_get_records, ["GET"], "获取玩家签到记录")
-
-        # 通知推送API
-        reg("/api/xiuxian/notifications/send", self.notification_api.handle_send_notification, ["POST"], "发送通知")
-        reg("/api/xiuxian/notifications/history", self.notification_api.handle_get_history, ["GET"], "获取通知历史")
-        reg("/api/xiuxian/notifications/{notification_id}", self.notification_api.handle_get_detail, ["GET"], "获取通知详情")
-        reg("/api/xiuxian/notifications/{notification_id}", self.notification_api.handle_delete_notification, ["DELETE"], "删除通知")
-        reg("/api/xiuxian/notifications/{notification_id}/delete", self.notification_api.handle_delete_notification, ["POST"], "删除通知(POST兼容)")
-        reg("/api/xiuxian/notifications/sessions", self.notification_api.handle_get_sessions, ["GET"], "获取所有玩家会话信息")
-        reg("/api/xiuxian/notifications/send-template", self.notification_api.handle_send_by_template, ["POST"], "使用模板发送通知")
-        reg("/api/xiuxian/notifications/templates", self.notification_api.handle_get_templates, ["GET"], "获取所有通知模板")
-        reg("/api/xiuxian/notifications/scheduled", self.notification_api.handle_create_scheduled, ["POST"], "创建定时通知")
-        reg("/api/xiuxian/notifications/scheduled", self.notification_api.handle_get_scheduled, ["GET"], "获取定时通知列表")
-        reg("/api/xiuxian/notifications/scheduled/{schedule_id}/toggle", self.notification_api.handle_toggle_scheduled, ["PUT", "POST"], "启用/禁用定时通知")
-        reg("/api/xiuxian/notifications/scheduled/{schedule_id}", self.notification_api.handle_delete_scheduled, ["DELETE"], "删除定时通知")
-        reg("/api/xiuxian/notifications/scheduled/{schedule_id}/delete", self.notification_api.handle_delete_scheduled, ["POST"], "删除定时通知(POST兼容)")
-
-        logger.info("修仙游戏后台管理API路由已注册")
+        """设置后台管理API路由
+        
+        现已全部迁移到独立AdminServer，此方法保留用于兼容性
+        """
+        logger.info("修仙游戏后台管理API已迁移到独立服务器，不再通过AstrBot插件路由注册")
