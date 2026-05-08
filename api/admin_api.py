@@ -278,6 +278,35 @@ class AdminAPI:
         self.config_manager.update(data)
         return jsonify({"code": 0, "message": "配置更新成功"})
 
+    # ==================== 闭关管理 ====================
+
+    async def get_seclusion_status(self, player_id=None, **kwargs) -> Dict[str, Any]:
+        """获取玩家闭关状态"""
+        if player_id is None:
+            return jsonify({"code": -1, "message": "缺少player_id"}), 400
+
+        status = await self.cultivation_service.get_seclusion_status(player_id)
+        return jsonify({"code": 0, "data": status})
+
+    async def get_seclusion_records(self, player_id=None, **kwargs) -> Dict[str, Any]:
+        """获取玩家闭关记录"""
+        if player_id is None:
+            return jsonify({"code": -1, "message": "缺少player_id"}), 400
+
+        limit = int(request.args.get("limit", 10))
+        records = await self.cultivation_service.get_seclusion_records(player_id, limit)
+        return jsonify({"code": 0, "data": records})
+
+    # ==================== 丹毒管理 ====================
+
+    async def get_toxicity_status(self, player_id=None, **kwargs) -> Dict[str, Any]:
+        """获取玩家丹毒状态"""
+        if player_id is None:
+            return jsonify({"code": -1, "message": "缺少player_id"}), 400
+
+        status = await self.inventory_service.get_toxicity_status(player_id)
+        return jsonify({"code": 0, "data": status})
+
     # ==================== 数据统计 ====================
 
     async def get_game_stats(self, **kwargs) -> Dict[str, Any]:

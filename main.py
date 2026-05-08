@@ -19,7 +19,7 @@ from .services import (
     CheckinService,
     NotificationService,
 )
-from .api import PlayerAPI, ItemAPI, AdminAPI, CheckinAPI, NotificationAPI
+from .api import PlayerAPI, ItemAPI, CultivationAPI, AdminAPI, CheckinAPI, NotificationAPI
 
 
 @register(
@@ -42,9 +42,9 @@ class XiuxianPlugin(Star):
         self.migration_manager = MigrationManager(self.db_manager)
         # 初始化服务层
         self.player_service = PlayerService(self.db_manager, self.config_manager)
-        self.cultivation_service = CultivationService(self.db_manager)
+        self.cultivation_service = CultivationService(self.db_manager, self.config_manager)
         self.combat_service = CombatService(self.db_manager)
-        self.inventory_service = InventoryService(self.db_manager)
+        self.inventory_service = InventoryService(self.db_manager, self.config_manager)
         self.event_service = EventService(self.db_manager)
         # 初始化签到服务
         self.checkin_service = CheckinService(self.db_manager, self.config_manager)
@@ -55,6 +55,7 @@ class XiuxianPlugin(Star):
         # 初始化API层
         self.player_api = PlayerAPI(self.player_service)
         self.item_api = ItemAPI(self.inventory_service, self.player_service)
+        self.cultivation_api = CultivationAPI(self.cultivation_service, self.player_service)
         self.checkin_api = CheckinAPI(self.checkin_service, self.player_service)
         self.notification_api = NotificationAPI(self.notification_service)
         self.admin_api = AdminAPI(
@@ -156,6 +157,41 @@ class XiuxianPlugin(Star):
         result = await self.player_api.get_player_status(user_id)
         yield event.plain_result(result)
 
+    @filter.command("闭关修炼")
+    async def seclusion(self, event: AstrMessageEvent):
+        """闭关修炼，获取大量修为，示例：闭关修炼"""
+        user_id = event.get_sender_id()
+        result = await self.cultivation_api.seclusion(user_id)
+        yield event.plain_result(result)
+
+    @filter.command("服用")
+    async def use_pill(self, event: AstrMessageEvent):
+        """服用丹药，示例：服用 聚灵丹 / 服用 回春丹 3"""
+        user_id = event.get_sender_id()
+        message = event.get_message_str().replace("服用", "").strip()
+
+        if not message:
+            yield event.plain_result("用法：服用 <丹药名> [数量]\n示例：服用 聚灵丹 / 服用 回春丹 3")
+            return
+
+        parts = message.rsplit(None, 1)
+        if len(parts) == 2 and parts[1].isdigit():
+            item_name = parts[0]
+            quantity = int(parts[1])
+        else:
+            item_name = message
+            quantity = 1
+
+        result = await self.item_api.use_pill(user_id, item_name, quantity)
+        yield event.plain_result(result)
+
+    @filter.command("丹毒")
+    async def toxicity_status(self, event: AstrMessageEvent):
+        """查看丹毒状态，示例：丹毒"""
+        user_id = event.get_sender_id()
+        result = await self.item_api.get_toxicity_status(user_id)
+        yield event.plain_result(result)
+
     @filter.command("背包")
     async def inventory(self, event: AstrMessageEvent):
         """查看背包"""
@@ -199,11 +235,10 @@ class XiuxianPlugin(Star):
 【修仙游戏帮助】
 首次发言自动注册修仙角色
 修仙状态 - 查看角色状态
-修炼 - 进行修炼获取修为
-突破 - 尝试境界突破
-探索 - 探索秘境获取资源
+闭关修炼 - 闭关修炼获取大量修为(有冷却)
+服用 <丹药名> [数量] - 服用丹药，示例：服用 聚灵丹 / 服用 回春丹 3
+丹毒 - 查看丹毒状态
 背包 - 查看背包物品
-使用物品 <名称> - 使用指定物品
 更改道号 <新道号> - 修改角色道号（2-10个中文字符）
 修仙签到 - 每日签到获取修为奖励
 签到状态 - 查看签到状态和奖励规则
@@ -478,6 +513,13 @@ class XiuxianPlugin(Star):
 
         # 数据统计API
         reg("/api/xiuxian/stats", self.admin_api.get_game_stats, ["GET"], "获取游戏统计数据")
+
+        # 闭关修炼API
+        reg("/api/xiuxian/seclusion/{player_id}/status", self.admin_api.get_seclusion_status, ["GET"], "获取玩家闭关状态")
+        reg("/api/xiuxian/seclusion/{player_id}/records", self.admin_api.get_seclusion_records, ["GET"], "获取玩家闭关记录")
+
+        # 丹毒管理API
+        reg("/api/xiuxian/pill/{player_id}/toxicity", self.admin_api.get_toxicity_status, ["GET"], "获取玩家丹毒状态")
 
         # 签到管理API
         reg("/api/xiuxian/checkin/records", self.checkin_api.api_get_all_records, ["GET"], "获取所有签到记录")

@@ -50,6 +50,23 @@ class ConfigManager:
             {"id": "realm_008", "name": "大乘期", "level": 8, "exp_required": 2000000},
             {"id": "realm_009", "name": "渡劫期", "level": 9, "exp_required": 10000000},
         ],
+        "seclusion": {
+            "success_probability": 0.60,
+            "failure_probability": 0.25,
+            "possession_probability": 0.15,
+            "exp_ratio_min": 0.001,
+            "exp_ratio_max": 0.001,
+            "possession_exp_ratio": 0.001,
+            "cooldown_min_minutes": 10,
+            "cooldown_max_minutes": 30,
+            "encounter_probability": 0.10,
+        },
+        "pill": {
+            "toxicity_duration_hours": 24,
+            "same_pill_toxicity": 1,
+            "toxicity_penalty_rate": 0.1,
+            "detox_item_id": "item_detox",
+        },
         "notification": {
             "enabled": True,
             "max_title_length": 50,

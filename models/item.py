@@ -20,6 +20,7 @@ class Item:
     effect_value: int = 0
     price: int = 0
     is_usable: bool = True
+    realm_requirement: Optional[str] = None
     created_at: Optional[datetime] = None
     
     def to_dict(self) -> dict:
@@ -34,6 +35,7 @@ class Item:
             "effect_value": self.effect_value,
             "price": self.price,
             "is_usable": self.is_usable,
+            "realm_requirement": self.realm_requirement,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
     
@@ -50,6 +52,7 @@ class Item:
             effect_value=data.get("effect_value", 0),
             price=data.get("price", 0),
             is_usable=bool(data.get("is_usable", 1)),
+            realm_requirement=data.get("realm_requirement"),
             created_at=datetime.fromisoformat(data["created_at"]) if data.get("created_at") else None,
         )
 
