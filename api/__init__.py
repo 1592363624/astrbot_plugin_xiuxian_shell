@@ -5,7 +5,6 @@ API接口模块
 
 from .player_api import PlayerAPI
 from .item_api import ItemAPI
-from .skill_api import SkillAPI
 from .admin_api import AdminAPI
 from .checkin_api import CheckinAPI
 from .notification_api import NotificationAPI
@@ -13,7 +12,6 @@ from .notification_api import NotificationAPI
 __all__ = [
     "PlayerAPI",
     "ItemAPI",
-    "SkillAPI",
     "AdminAPI",
     "CheckinAPI",
     "NotificationAPI",

@@ -53,33 +53,3 @@ class ItemAPI:
             inventory_text += f"- {item['name']} x{item['quantity']} [{rarity}]\n"
 
         return inventory_text.strip()
-
-    async def use_item(self, user_id: str, item_name: str) -> str:
-        """
-        使用物品
-
-        Args:
-            user_id: 用户ID
-            item_name: 物品名称
-
-        Returns:
-            使用结果
-        """
-        if not item_name:
-            return "请指定要使用的物品名称，格式：使用物品 <名称>"
-
-        player_dict, error = await self.player_service.check_player_registered(user_id)
-        if error:
-            return error
-
-        item = await self.inventory_service.get_item_by_name(item_name)
-        if not item:
-            return f"找不到物品【{item_name}】"
-
-        try:
-            result = await self.inventory_service.use_item(player_dict["id"], item.id)
-            return result["message"]
-        except ValueError as e:
-            return str(e)
-        except Exception as e:
-            return f"使用物品失败：{str(e)}"

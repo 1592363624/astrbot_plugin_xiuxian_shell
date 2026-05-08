@@ -19,7 +19,7 @@ from .services import (
     CheckinService,
     NotificationService,
 )
-from .api import PlayerAPI, ItemAPI, SkillAPI, AdminAPI, CheckinAPI, NotificationAPI
+from .api import PlayerAPI, ItemAPI, AdminAPI, CheckinAPI, NotificationAPI
 
 
 @register(
@@ -55,7 +55,6 @@ class XiuxianPlugin(Star):
         # 初始化API层
         self.player_api = PlayerAPI(self.player_service)
         self.item_api = ItemAPI(self.inventory_service, self.player_service)
-        self.skill_api = SkillAPI(self.cultivation_service, self.player_service)
         self.checkin_api = CheckinAPI(self.checkin_service, self.player_service)
         self.notification_api = NotificationAPI(self.notification_service)
         self.admin_api = AdminAPI(
@@ -157,40 +156,11 @@ class XiuxianPlugin(Star):
         result = await self.player_api.get_player_status(user_id)
         yield event.plain_result(result)
 
-    @filter.command("修炼")
-    async def cultivate(self, event: AstrMessageEvent):
-        """开始修炼"""
-        user_id = event.get_sender_id()
-        result = await self.skill_api.cultivate(user_id)
-        yield event.plain_result(result)
-
-    @filter.command("突破")
-    async def breakthrough(self, event: AstrMessageEvent):
-        """尝试境界突破"""
-        user_id = event.get_sender_id()
-        result = await self.skill_api.breakthrough(user_id)
-        yield event.plain_result(result)
-
-    @filter.command("探索")
-    async def explore(self, event: AstrMessageEvent):
-        """探索秘境"""
-        user_id = event.get_sender_id()
-        result = await self.player_api.explore(user_id)
-        yield event.plain_result(result)
-
     @filter.command("背包")
     async def inventory(self, event: AstrMessageEvent):
         """查看背包"""
         user_id = event.get_sender_id()
         result = await self.item_api.get_inventory(user_id)
-        yield event.plain_result(result)
-
-    @filter.command("使用物品")
-    async def use_item(self, event: AstrMessageEvent):
-        """使用物品"""
-        user_id = event.get_sender_id()
-        item_name = event.get_message_str().replace("使用物品", "").strip()
-        result = await self.item_api.use_item(user_id, item_name)
         yield event.plain_result(result)
 
     @filter.command("更改道号")

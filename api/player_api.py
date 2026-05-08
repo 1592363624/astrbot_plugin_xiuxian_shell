@@ -2,9 +2,9 @@
 玩家API
 提供玩家相关的接口，供命令层和后台管理调用
 """
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
-from ..services import PlayerService, EventService
+from ..services import PlayerService
 from ..utils.attributes import calc_battle_attrs
 
 
@@ -13,10 +13,6 @@ class PlayerAPI:
 
     def __init__(self, player_service: PlayerService):
         self.player_service = player_service
-        self.event_service: Optional[EventService] = None
-
-    def set_event_service(self, event_service: EventService):
-        self.event_service = event_service
 
     async def create_player(self, user_id: str, username: str) -> str:
         try:
@@ -79,25 +75,6 @@ class PlayerAPI:
 体魄:{player_dict['str']} 灵觉:{player_dict['percep']} 机缘:{player_dict['luck']}
         """
         return status.strip()
-
-    async def explore(self, user_id: str) -> str:
-        player_dict, error = await self.player_service.check_player_registered(user_id)
-        if error:
-            return error
-
-        if self.event_service:
-            result = await self.event_service.trigger_event(player_dict["id"], "explore")
-            if result.get("triggered"):
-                return result["message"]
-
-        import random
-        exp_gain = random.randint(5, 20)
-        stone_gain = random.randint(1, 10)
-
-        await self.player_service.modify_resource(player_dict["id"], "experience", exp_gain)
-        await self.player_service.modify_resource(player_dict["id"], "spirit_stone", stone_gain)
-
-        return f"你外出探索，获得 {exp_gain} 修为和 {stone_gain} 灵石"
 
     async def change_username(self, user_id: str, new_username: str) -> str:
         result, error = await self.player_service.change_username(user_id, new_username)
