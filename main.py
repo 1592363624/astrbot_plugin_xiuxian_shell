@@ -481,13 +481,14 @@ class XiuxianPlugin(Star):
             )
 
     # ==================== 后台管理API路由 ====================
-    # 注意：所有后台管理API已迁移到独立HTTP服务器(AdminServer)
+    # 所有后台管理API已完全迁移到独立HTTP服务器(AdminServer)
     # 独立服务器在插件初始化时自动启动，默认端口6186
     # 访问地址: http://localhost:6186/
+    # 后台管理完全不依赖AstrBot Dashboard，可直接通过浏览器访问
 
     async def setup_api_routes(self):
         """设置后台管理API路由
-        
+
         现已全部迁移到独立AdminServer，此方法保留用于兼容性
         """
         logger.info("修仙游戏后台管理API已迁移到独立服务器，不再通过AstrBot插件路由注册")

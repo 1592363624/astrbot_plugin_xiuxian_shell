@@ -245,7 +245,10 @@ class AdminServer:
         self.password = new_password
         # 更新配置中的密码
         self.admin_api.config_manager.update({"admin_password": new_password})
-        return self._ok({"message": "密码修改成功"})
+        # 使所有现有会话失效，强制重新登录
+        self._sessions.clear()
+        logger.info("密码已修改，所有会话已清除")
+        return self._ok({"message": "密码修改成功，请使用新密码重新登录"})
 
     async def _handle_stats(self, request: web.Request) -> web.Response:
         """获取游戏统计"""

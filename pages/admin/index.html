@@ -549,67 +549,12 @@ const Utils = {
 
 /* ===== API通信层 ===== */
 const Api = {
-  _bridge: null,
-  _bridgeReady: false,
-  _useBridge: false,
-  _authFailed: false,
   _token: localStorage.getItem('xiuxian_admin_token') || '',
-  _baseUrl: '',
-  _isStandalone: false,
 
-  async init() {
+  init() {
     DebugLog.log('Api.init 开始');
-    DebugLog.log('AstrBotPluginPage 存在: ' + !!window.AstrBotPluginPage);
-
-    // 检测运行环境：独立服务器或AstrBot插件
-    this._detectEnvironment();
-
-    // 如果是AstrBot插件环境且Bridge SDK可用，优先使用Bridge
-    if (!this._isStandalone && window.AstrBotPluginPage) {
-      try {
-        const readyPromise = window.AstrBotPluginPage.ready();
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Bridge ready 超时(5s)')), 5000)
-        );
-        await Promise.race([readyPromise, timeoutPromise]);
-        this._bridge = window.AstrBotPluginPage;
-        this._bridgeReady = true;
-        this._useBridge = true;
-        DebugLog.log('Bridge SDK 已就绪');
-      } catch(e) {
-        DebugLog.warn('Bridge SDK 未就绪: ' + e.message);
-        this._bridge = null;
-        this._bridgeReady = false;
-      }
-    }
-
-    if (!this._useBridge) {
-      DebugLog.log('使用 fetch 模式，环境: ' + (this._isStandalone ? '独立服务器' : 'AstrBot插件(降级)'));
-      if (this._token) {
-        DebugLog.log('已存在本地token，尝试使用');
-      }
-      try {
-        const testRes = await this._fetchGet('api/xiuxian/stats', {});
-        DebugLog.log('fetch 测试: code=' + (testRes ? testRes.code : 'null'));
-        if (testRes && testRes.code === 401) {
-          this._authFailed = true;
-        }
-      } catch(e) {
-        DebugLog.error('fetch 测试失败: ' + e.message);
-      }
-    }
-  },
-
-  _detectEnvironment() {
-    // 如果当前页面URL不是以 /api/plug 或 /api/plugin 开头，认为是独立服务器
-    const path = window.location.pathname;
-    this._isStandalone = !path.startsWith('/api/plug') && !path.startsWith('/api/plugin');
-    if (this._isStandalone) {
-      this._baseUrl = '';
-      DebugLog.log('检测到独立服务器环境');
-    } else {
-      this._baseUrl = '/api/plug';
-      DebugLog.log('检测到AstrBot插件环境');
+    if (this._token) {
+      DebugLog.log('已存在本地token');
     }
   },
 
@@ -627,9 +572,7 @@ const Api = {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
     try {
-      // 独立服务器使用独立登录接口，AstrBot使用Dashboard登录接口
-      const loginUrl = this._isStandalone ? '/api/xiuxian/auth/login' : '/api/auth/login';
-      const resp = await fetch(loginUrl, {
+      const resp = await fetch('/api/xiuxian/auth/login', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
         body: JSON.stringify({username, password}),
@@ -650,50 +593,15 @@ const Api = {
     }
   },
 
-  _withTimeout(promise, ms = 10000) {
-    return Promise.race([
-      promise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error('请求超时(' + ms + 'ms)')), ms))
-    ]);
-  },
-
-  _normalize(res) {
-    if (res === null || res === undefined) return { code: -1, message: '空响应' };
-    if (typeof res === 'object' && res.code !== undefined) return res;
-    // 兼容 AstrBot Response 格式 {status: 'ok', data: ...}
-    if (typeof res === 'object' && res.status !== undefined) {
-      return { code: res.status === 'ok' ? 0 : -1, data: res.data, message: res.message };
-    }
-    return { code: 0, data: res };
-  },
-
-  async _bridgeGet(path, params) {
-    const r = await this._withTimeout(this._bridge.apiGet(path, params), 10000);
-    return this._normalize(r);
-  },
-
-  async _bridgePost(path, body) {
-    const r = await this._withTimeout(this._bridge.apiPost(path, body), 10000);
-    return this._normalize(r);
-  },
-
   _getHeaders() {
     const headers = {'Content-Type':'application/json'};
     if (this._token) headers['Authorization'] = 'Bearer ' + this._token;
     return headers;
   },
 
-  _buildUrl(path) {
-    // 独立服务器直接使用path，AstrBot插件需要加 /api/plug 前缀
-    if (this._isStandalone) {
-      return path.startsWith('/') ? path : '/' + path;
-    }
-    return `/api/plug/${path}`;
-  },
-
   async _fetchGet(path, params) {
     const qs = new URLSearchParams(params).toString();
-    const url = this._buildUrl(path) + (qs ? '?' + qs : '');
+    const url = '/' + path + (qs ? '?' + qs : '');
     DebugLog.log('GET ' + url + ' token=' + (this._token ? '有' : '无'));
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
@@ -702,7 +610,6 @@ const Api = {
       clearTimeout(timer);
       DebugLog.log('GET ' + url + ' status=' + resp.status);
       if (resp.status === 401) {
-        this._authFailed = true;
         return { code: 401, message: '未登录或登录已过期' };
       }
       if (!resp.ok) return { code: -1, message: 'HTTP ' + resp.status };
@@ -717,7 +624,7 @@ const Api = {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
     try {
-      const resp = await fetch(this._buildUrl(path), {
+      const resp = await fetch('/' + path, {
         method: 'POST',
         headers: this._getHeaders(),
         body: JSON.stringify(body),
@@ -726,7 +633,6 @@ const Api = {
       });
       clearTimeout(timer);
       if (resp.status === 401) {
-        this._authFailed = true;
         return { code: 401, message: '未登录或登录已过期' };
       }
       if (!resp.ok) return { code: -1, message: 'HTTP ' + resp.status };
@@ -738,24 +644,10 @@ const Api = {
   },
 
   async get(path, params = {}) {
-    if (this._useBridge && this._bridge) {
-      try {
-        return await this._bridgeGet(path, params);
-      } catch(e) {
-        DebugLog.warn('Bridge GET失败，降级fetch: ' + e.message);
-      }
-    }
     return this._fetchGet(path, params);
   },
 
   async post(path, body = {}) {
-    if (this._useBridge && this._bridge) {
-      try {
-        return await this._bridgePost(path, body);
-      } catch(e) {
-        DebugLog.warn('Bridge POST失败，降级fetch: ' + e.message);
-      }
-    }
     return this._fetchPost(path, body);
   },
 
@@ -805,13 +697,14 @@ const ModuleRegistry = {
   _modules: {},
   register(module) {
     if (!module.id || !module.name) throw new Error('模块必须包含id和name');
-    this._modules[module.id] = {
-      id: module.id, name: module.name, icon: module.icon || '📋',
+    // 保留模块所有自定义属性（如 _config、_descriptions 等），同时确保核心字段存在
+    this._modules[module.id] = Object.assign({}, module, {
+      icon: module.icon || '📋',
       group: module.group || '其他',
       render: module.render || (() => ''),
       init: module.init || (async () => {}),
       refresh: module.refresh || null,
-    };
+    });
   },
   getAll() { return Object.values(this._modules); },
   get(id) { return this._modules[id]; },
@@ -1291,11 +1184,9 @@ ModuleRegistry.register({
   _config: {},
   _descriptions: {
     'database.name': '数据库文件名', 'database.wal_mode': '启用WAL模式(推荐开启)',
-    'game.max_level': '最大等级', 'game.base_exp_multiplier': '基础经验倍率',
-    'game.register_cooldown': '注册冷却时间(秒)', 'game.cultivation_cooldown': '修炼冷却时间(秒)',
+    'game.register_cooldown': '注册冷却时间(秒)',
     'checkin.base_reward_rate': '签到基础奖励倍率', 'checkin.three_day_reward_rate': '连续3天奖励倍率',
-    'player.initial_spirit_stone': '初始灵石', 'player.attr_total_points': '属性总点数',
-    'notification.enabled': '启用通知系统', 'notification.max_title_length': '标题最大长度',
+    'checkin.seven_day_reward_rate': '连续7天奖励倍率',
   },
   async init() { await this.refresh(); },
   async refresh() {
@@ -1304,7 +1195,7 @@ ModuleRegistry.register({
     else this._config = {};
   },
   render() {
-    const sections = { '数据库': ['database'], '游戏': ['game'], '签到': ['checkin'], '玩家': ['player'], '通知': ['notification'] };
+    const sections = { '数据库': ['database'], '游戏': ['game'], '签到': ['checkin'] };
     let html = '<div style="margin-bottom:12px"><button class="btn btn-primary" onclick="ModuleRegistry.get(\'config\')._saveAll()">💾 保存所有配置</button> <button class="btn" onclick="ModuleRegistry.get(\'config\')._refreshConfig()">🔄 刷新</button></div>';
     for (const [sectionName, keys] of Object.entries(sections)) {
       html += '<div class="config-section"><div class="config-section-header" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'block\':\'none\'"><h4>' + sectionName + '</h4><span style="font-size:11px;color:var(--text-secondary)">点击展开/收起</span></div><div class="config-section-body">';
@@ -1346,13 +1237,14 @@ ModuleRegistry.register({
   },
   _collectConfig() {
     const config = {};
-    const sections = { database: ['name','wal_mode'], game: ['max_level','base_exp_multiplier','register_cooldown','cultivation_cooldown','explore_cooldown','combat_cooldown'], checkin: ['base_reward_rate','three_day_reward_rate','seven_day_reward_rate'], player: ['initial_spirit_stone','attr_total_points','attr_min','attr_max','luck_min','luck_max'], notification: ['enabled','max_title_length','max_content_length','history_page_size','history_max_pages'] };
+    const sections = { database: ['name','wal_mode'], game: ['register_cooldown'], checkin: ['base_reward_rate','three_day_reward_rate','seven_day_reward_rate'] };
     for (const [section, fields] of Object.entries(sections)) {
       config[section] = {};
       fields.forEach(field => {
         const el = document.getElementById('cfg_' + section + '_' + field);
         if (!el) return;
-        const origVal = this._config[section]?.[field];
+        const sectionData = this._config[section] || {};
+        const origVal = sectionData[field];
         if (typeof origVal === 'boolean') config[section][field] = el.checked;
         else if (typeof origVal === 'number') config[section][field] = Number(el.value);
         else config[section][field] = el.value;
@@ -1468,15 +1360,8 @@ const App = {
 
   async init() {
     DebugLog.log('App.init 开始');
-    const contentArea = document.getElementById('contentArea');
 
-    try {
-      await Api.init();
-    } catch(e) {
-      DebugLog.error('Api初始化异常: ' + e.message);
-    }
-
-    DebugLog.log('Bridge模式: ' + Api._useBridge);
+    Api.init();
     DebugLog.log('开始渲染侧边栏');
     this._renderSidebar();
 
@@ -1514,10 +1399,10 @@ const App = {
       this._renderModule(moduleId);
     } catch(e) {
       DebugLog.error('模块加载失败: ' + e.message);
-      if (Api._authFailed) {
+      if (e.message && e.message.includes('未登录')) {
         App._showLoginForm();
       } else {
-        document.getElementById('contentArea').innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><p>加载失败: ' + Utils.escapeHtml(e.message) + '</p><p style="margin-top:8px;font-size:11px">Bridge SDK: ' + (Api._useBridge ? '✅已连接' : '❌未连接') + '</p><button class="btn" style="margin-top:12px" onclick="App._switchModule(\'' + moduleId + '\')">重试</button></div>';
+        document.getElementById('contentArea').innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><p>加载失败: ' + Utils.escapeHtml(e.message) + '</p><button class="btn" style="margin-top:12px" onclick="App._switchModule(\'' + moduleId + '\')">重试</button></div>';
       }
     }
   },
@@ -1559,7 +1444,6 @@ const App = {
 
     const res = await Api.login(user, pass);
     if (res.code === 0) {
-      Api._authFailed = false;
       Toast.success('登录成功');
       await this._switchModule('dashboard');
     } else {

@@ -135,16 +135,6 @@ class V001InitialSchema(BaseMigration):
             )
         """)
         
-        # 游戏配置表
-        await self.db.execute("""
-            CREATE TABLE IF NOT EXISTS game_config (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL,
-                description TEXT,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
         await self.db.commit()
 
     async def down(self):
@@ -158,7 +148,6 @@ class V001InitialSchema(BaseMigration):
             "items",
             "players",
             "realms",
-            "game_config",
         ]
         for table in tables:
             await self.db.execute(f"DROP TABLE IF EXISTS {table}")

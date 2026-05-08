@@ -1,10 +1,9 @@
 """
 后台管理API
-提供后台管理系统的HTTP接口，兼容AstrBot Dashboard(Quart)路由分发机制
+提供后台管理系统的HTTP接口
 """
-from pathlib import Path
 from typing import Dict, Any, TYPE_CHECKING
-from quart import jsonify, request, Response as QuartResponse
+from quart import jsonify, request
 
 from ..services import (
     PlayerService,
@@ -47,25 +46,6 @@ class AdminAPI:
         self.inventory_service = inventory_service
         self.event_service = event_service
         self.config_manager = config_manager
-
-    async def serve_admin_page(self):
-        """直接返回后台管理HTML页面，支持独立URL访问"""
-        html_path = Path(__file__).parent.parent / "pages" / "admin" / "index.html"
-        if not html_path.exists():
-            return QuartResponse(
-                "管理页面文件未找到: " + str(html_path),
-                status=404,
-                headers={"Content-Type": "text/plain; charset=utf-8"},
-            )
-        html_content = html_path.read_text(encoding="utf-8")
-        return QuartResponse(
-            html_content,
-            status=200,
-            headers={
-                "Content-Type": "text/html; charset=utf-8",
-                "Cache-Control": "no-store",
-            },
-        )
 
     # ==================== 玩家管理 ====================
 
