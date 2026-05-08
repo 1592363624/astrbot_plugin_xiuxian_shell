@@ -3,6 +3,8 @@ AstrBot文字修仙游戏插件主入口
 负责插件生命周期管理和命令注册，不包含具体业务逻辑
 """
 
+from typing import Optional
+
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
@@ -152,12 +154,45 @@ class XiuxianPlugin(Star):
             self._scheduled_check_task.cancel()
             logger.info("定时通知检查任务已停止")
 
+    # ==================== 封禁检查辅助方法 ====================
+
+    async def _check_player_banned(self, user_id: str) -> Optional[str]:
+        """
+        检查玩家是否被封禁
+
+        Args:
+            user_id: 用户ID
+
+        Returns:
+            Optional[str]: 如果被封禁返回提示信息，否则返回 None
+        """
+        player = await self.player_service.get_player_by_user_id(user_id)
+        if not player:
+            return None
+
+        ban_info = await self.player_service.get_ban_info(player.id)
+        if ban_info["is_banned"]:
+            reason = ban_info.get("ban_reason") or "违反游戏规则"
+            return (
+                f"【仙途阻断】\n"
+                f"你已被仙界执法堂封禁，无法继续修仙。\n"
+                f"封禁理由：{reason}\n"
+                f"如有疑问，请联系管理员。"
+            )
+        return None
+
     # ==================== 事件监听区域 ====================
 
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def on_message(self, event: AstrMessageEvent):
         """监听所有消息，自动为未注册用户创建角色，并记录玩家会话信息"""
         user_id = event.get_sender_id()
+
+        # 检查玩家是否被封禁，被封禁则不再处理
+        ban_message = await self._check_player_banned(user_id)
+        if ban_message:
+            return
+
         # 记录玩家会话信息，用于后续主动推送通知
         await self.notification_service.record_player_session(
             user_id=user_id,
@@ -177,6 +212,10 @@ class XiuxianPlugin(Star):
     async def player_status(self, event: AstrMessageEvent):
         """查看修仙状态"""
         user_id = event.get_sender_id()
+        ban_message = await self._check_player_banned(user_id)
+        if ban_message:
+            yield event.plain_result(ban_message)
+            return
         result = await self.player_api.get_player_status(user_id)
         yield event.plain_result(result)
 
@@ -184,6 +223,10 @@ class XiuxianPlugin(Star):
     async def seclusion(self, event: AstrMessageEvent):
         """闭关修炼，获取大量修为，示例：闭关修炼"""
         user_id = event.get_sender_id()
+        ban_message = await self._check_player_banned(user_id)
+        if ban_message:
+            yield event.plain_result(ban_message)
+            return
         result = await self.cultivation_api.seclusion(user_id)
         yield event.plain_result(result)
 
@@ -191,6 +234,10 @@ class XiuxianPlugin(Star):
     async def use_pill(self, event: AstrMessageEvent):
         """服用丹药，示例：服用 聚灵丹 / 服用 回春丹 3"""
         user_id = event.get_sender_id()
+        ban_message = await self._check_player_banned(user_id)
+        if ban_message:
+            yield event.plain_result(ban_message)
+            return
         message = event.get_message_str().replace("服用", "").strip()
 
         if not message:
@@ -212,6 +259,10 @@ class XiuxianPlugin(Star):
     async def toxicity_status(self, event: AstrMessageEvent):
         """查看丹毒状态，示例：丹毒"""
         user_id = event.get_sender_id()
+        ban_message = await self._check_player_banned(user_id)
+        if ban_message:
+            yield event.plain_result(ban_message)
+            return
         result = await self.item_api.get_toxicity_status(user_id)
         yield event.plain_result(result)
 
@@ -219,6 +270,10 @@ class XiuxianPlugin(Star):
     async def inventory(self, event: AstrMessageEvent):
         """查看背包"""
         user_id = event.get_sender_id()
+        ban_message = await self._check_player_banned(user_id)
+        if ban_message:
+            yield event.plain_result(ban_message)
+            return
         result = await self.item_api.get_inventory(user_id)
         yield event.plain_result(result)
 
@@ -226,6 +281,10 @@ class XiuxianPlugin(Star):
     async def change_username(self, event: AstrMessageEvent):
         """更改道号"""
         user_id = event.get_sender_id()
+        ban_message = await self._check_player_banned(user_id)
+        if ban_message:
+            yield event.plain_result(ban_message)
+            return
         new_username = event.get_message_str().replace("更改道号", "").strip()
         result = await self.player_api.change_username(user_id, new_username)
         yield event.plain_result(result)
@@ -234,6 +293,10 @@ class XiuxianPlugin(Star):
     async def checkin(self, event: AstrMessageEvent):
         """每日签到获取修为奖励"""
         user_id = event.get_sender_id()
+        ban_message = await self._check_player_banned(user_id)
+        if ban_message:
+            yield event.plain_result(ban_message)
+            return
         result = await self.checkin_api.checkin(user_id)
         yield event.plain_result(result)
 
@@ -241,6 +304,10 @@ class XiuxianPlugin(Star):
     async def checkin_status(self, event: AstrMessageEvent):
         """查看签到状态和奖励规则"""
         user_id = event.get_sender_id()
+        ban_message = await self._check_player_banned(user_id)
+        if ban_message:
+            yield event.plain_result(ban_message)
+            return
         result = await self.checkin_api.get_checkin_status(user_id)
         yield event.plain_result(result)
 
@@ -248,12 +315,21 @@ class XiuxianPlugin(Star):
     async def checkin_ranking(self, event: AstrMessageEvent):
         """查看签到排行榜"""
         user_id = event.get_sender_id()
+        ban_message = await self._check_player_banned(user_id)
+        if ban_message:
+            yield event.plain_result(ban_message)
+            return
         result = await self.checkin_api.get_checkin_ranking(user_id)
         yield event.plain_result(result)
 
     @filter.command("修仙帮助")
     async def help_command(self, event: AstrMessageEvent):
         """显示帮助信息"""
+        user_id = event.get_sender_id()
+        ban_message = await self._check_player_banned(user_id)
+        if ban_message:
+            yield event.plain_result(ban_message)
+            return
         help_text = """
 【修仙游戏帮助】
 首次发言自动注册修仙角色

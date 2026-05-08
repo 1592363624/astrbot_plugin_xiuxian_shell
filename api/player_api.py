@@ -47,6 +47,13 @@ class PlayerAPI:
         realm_name = realm["name"] if realm else "未知"
         realm_level = realm["level"] if realm else 1
 
+        # 获取下一境界所需修为作为显示分母
+        next_realm = await self.player_service.db.fetch_one(
+            "SELECT experience_required FROM realms WHERE level > ? ORDER BY level ASC LIMIT 1",
+            (realm_level,),
+        )
+        exp_required = next_realm["experience_required"] if next_realm else 0
+
         battle_attrs = calc_battle_attrs(
             level=realm_level,
             bone=player_dict["bone"],
@@ -61,8 +68,9 @@ class PlayerAPI:
 【修仙状态】
 道号：{player_dict['username']}
 境界：{realm_name}
-修为：{player_dict['experience']}
+修为：{player_dict['experience']}/{exp_required}
 灵石：{player_dict['spirit_stone']}
+
 ———战斗属性———
 气血：{player_dict['health']}/{battle_attrs['max_health']}
 法力：{player_dict['mp']}/{battle_attrs['max_mp']}

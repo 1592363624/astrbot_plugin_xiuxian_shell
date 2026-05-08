@@ -388,8 +388,18 @@ tr:hover td { background: rgba(201, 168, 76, 0.04); }
 }
 .config-section-header:hover { background: rgba(201, 168, 76, 0.1); }
 .config-section-header h4 { font-size: 13px; color: var(--text-gold); }
-.config-section-body { padding: 16px; }
-.config-field { margin-bottom: 12px; }
+.config-section-body {
+  padding: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+.config-field {
+  background: rgba(0,0,0,0.15);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+}
 .config-field .field-key {
   font-size: 12px;
   color: var(--text-gold-light);
@@ -399,7 +409,14 @@ tr:hover td { background: rgba(201, 168, 76, 0.04); }
 .config-field .field-desc {
   font-size: 11px;
   color: var(--text-secondary);
-  margin-bottom: 4px;
+  margin-bottom: 8px;
+}
+.config-field .form-input {
+  width: 100%;
+  max-width: none;
+}
+.config-field .switch {
+  /* 开关保持固定宽度，不拉伸 */
 }
 
 .switch {

@@ -96,14 +96,90 @@ class AdminAPI:
         return jsonify({"code": 0, "data": player.to_dict()})
 
     async def delete_player(self, player_id=None, **kwargs) -> Dict[str, Any]:
-        """删除玩家"""
+        """
+        彻底删除玩家及其所有关联数据
+
+        会级联删除：背包、功法、事件记录、签到记录、闭关记录、丹毒记录、会话信息
+        """
         if player_id is None:
             return jsonify({"code": -1, "message": "缺少player_id"}), 400
 
-        success = await self.player_service.delete_player(player_id)
+        # 获取玩家信息以取得 user_id
+        player = await self.player_service.get_player_by_id(player_id)
+        user_id = player.user_id if player else None
+
+        success = await self.player_service.delete_player(player_id, user_id)
         if not success:
             return jsonify({"code": -1, "message": "删除失败"}), 400
         return jsonify({"code": 0, "message": "删除成功"})
+
+    async def reset_player(self, player_id=None, **kwargs) -> Dict[str, Any]:
+        """
+        重置玩家数据
+
+        保留玩家账号，但清空所有游戏进度：
+        - 清空背包、功法、事件记录、签到记录、闭关记录、丹毒记录
+        - 重置境界为凡人、修为清零、灵石回到初始值、后天属性清零
+        """
+        if player_id is None:
+            return jsonify({"code": -1, "message": "缺少player_id"}), 400
+
+        player = await self.player_service.get_player_by_id(player_id)
+        if not player:
+            return jsonify({"code": -1, "message": "玩家不存在"}), 404
+
+        user_id = player.user_id
+        reset_player = await self.player_service.reset_player(player_id, user_id)
+        if not reset_player:
+            return jsonify({"code": -1, "message": "重置失败"}), 400
+
+        return jsonify({"code": 0, "message": "重置成功", "data": reset_player.to_dict()})
+
+    async def ban_player(self, player_id=None, **kwargs) -> Dict[str, Any]:
+        """
+        封禁玩家（软删除）
+
+        不真正删除数据，而是将 is_deleted 标记为 1，并记录封禁理由。
+        被软删除的玩家无法正常使用游戏功能。
+        """
+        if player_id is None:
+            return jsonify({"code": -1, "message": "缺少player_id"}), 400
+
+        player = await self.player_service.get_player_by_id(player_id)
+        if not player:
+            return jsonify({"code": -1, "message": "玩家不存在"}), 404
+
+        # 从请求体中获取封禁理由
+        data = await request.get_json() or {}
+        ban_reason = data.get("ban_reason", "违反游戏规则")
+
+        user_id = player.user_id
+        success = await self.player_service.soft_delete_player(
+            player_id, user_id, ban_reason
+        )
+        if not success:
+            return jsonify({"code": -1, "message": "封禁失败"}), 400
+
+        return jsonify({
+            "code": 0,
+            "message": "封禁成功",
+            "data": {"ban_reason": ban_reason},
+        })
+
+    async def unban_player(self, player_id=None, **kwargs) -> Dict[str, Any]:
+        """
+        解封玩家（恢复软删除）
+
+        将 is_deleted 标记重置为 0，恢复玩家正常使用权限
+        """
+        if player_id is None:
+            return jsonify({"code": -1, "message": "缺少player_id"}), 400
+
+        success = await self.player_service.restore_player(player_id)
+        if not success:
+            return jsonify({"code": -1, "message": "解封失败"}), 400
+
+        return jsonify({"code": 0, "message": "解封成功"})
 
     # ==================== 物品管理 ====================
 

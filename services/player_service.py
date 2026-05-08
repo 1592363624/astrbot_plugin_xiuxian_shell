@@ -1,6 +1,6 @@
 """
 玩家服务
-处理玩家相关的业务逻辑
+处理玩家相关的业务逻辑，包括注册、查询、修改、删除、重置、软删除等
 """
 import re
 import time
@@ -196,11 +196,277 @@ class PlayerService:
 
         return await self.get_player_by_id(player_id)
 
-    async def delete_player(self, player_id: str) -> bool:
-        sql = "DELETE FROM players WHERE id = ?"
-        cursor = await self.db.execute(sql, (player_id,))
-        await self.db.commit()
-        return cursor.rowcount > 0
+    async def delete_player(self, player_id: str, user_id: str = None) -> bool:
+        """
+        彻底删除玩家及其所有关联数据（级联删除）
+
+        删除范围包括：
+        - 玩家背包物品 (player_inventory)
+        - 玩家功法 (player_skills)
+        - 玩家事件记录 (player_events)
+        - 签到记录 (checkin_records)
+        - 闭关记录 (seclusion_records)
+        - 丹毒记录 (pill_toxicity_records)
+        - 玩家会话 (player_sessions)
+        - 玩家主表 (players)
+
+        Args:
+            player_id: 玩家ID
+            user_id: 用户ID（可选，用于删除会话记录）
+
+        Returns:
+            bool: 是否删除成功
+        """
+        try:
+            # 1. 删除玩家背包
+            await self.db.execute(
+                "DELETE FROM player_inventory WHERE player_id = ?", (player_id,)
+            )
+            # 2. 删除玩家功法
+            await self.db.execute(
+                "DELETE FROM player_skills WHERE player_id = ?", (player_id,)
+            )
+            # 3. 删除玩家事件记录
+            await self.db.execute(
+                "DELETE FROM player_events WHERE player_id = ?", (player_id,)
+            )
+            # 4. 删除签到记录
+            await self.db.execute(
+                "DELETE FROM checkin_records WHERE player_id = ?", (player_id,)
+            )
+            # 5. 删除闭关记录
+            await self.db.execute(
+                "DELETE FROM seclusion_records WHERE player_id = ?", (player_id,)
+            )
+            # 6. 删除丹毒记录
+            await self.db.execute(
+                "DELETE FROM pill_toxicity_records WHERE player_id = ?", (player_id,)
+            )
+            # 7. 删除玩家主表
+            cursor = await self.db.execute(
+                "DELETE FROM players WHERE id = ?", (player_id,)
+            )
+            # 8. 删除会话记录（如果有 user_id）
+            if user_id:
+                await self.db.execute(
+                    "DELETE FROM player_sessions WHERE user_id = ?", (user_id,)
+                )
+
+            await self.db.commit()
+
+            # 清理缓存
+            if user_id and user_id in self._registered_players_cache:
+                del self._registered_players_cache[user_id]
+
+            logger.info(f"玩家 {player_id} 及其所有关联数据已被彻底删除")
+            return cursor.rowcount > 0
+        except Exception as e:
+            await self.db.rollback()
+            logger.error(f"删除玩家 {player_id} 失败: {e}")
+            return False
+
+    async def reset_player(self, player_id: str, user_id: str = None) -> Optional[Player]:
+        """
+        重置玩家数据，保留账号但清空所有游戏进度
+
+        清空范围包括：
+        - 背包物品
+        - 已学功法
+        - 事件记录
+        - 签到记录
+        - 闭关记录
+        - 丹毒记录
+
+        重置玩家属性到初始状态：
+        - 境界回到 realm_001（凡人）
+        - 修为清零
+        - 灵石回到初始值 100
+        - 后天属性清零
+        - 气血/法力/体力回到初始值
+
+        Args:
+            player_id: 玩家ID
+            user_id: 用户ID（可选，用于更新缓存）
+
+        Returns:
+            Optional[Player]: 重置后的玩家对象，失败返回 None
+        """
+        try:
+            # 1. 清空玩家背包
+            await self.db.execute(
+                "DELETE FROM player_inventory WHERE player_id = ?", (player_id,)
+            )
+            # 2. 清空玩家功法
+            await self.db.execute(
+                "DELETE FROM player_skills WHERE player_id = ?", (player_id,)
+            )
+            # 3. 清空玩家事件记录
+            await self.db.execute(
+                "DELETE FROM player_events WHERE player_id = ?", (player_id,)
+            )
+            # 4. 清空签到记录
+            await self.db.execute(
+                "DELETE FROM checkin_records WHERE player_id = ?", (player_id,)
+            )
+            # 5. 清空闭关记录
+            await self.db.execute(
+                "DELETE FROM seclusion_records WHERE player_id = ?", (player_id,)
+            )
+            # 6. 清空丹毒记录
+            await self.db.execute(
+                "DELETE FROM pill_toxicity_records WHERE player_id = ?", (player_id,)
+            )
+
+            # 7. 重置玩家属性到初始状态
+            battle_attrs = calc_battle_attrs(
+                level=1, bone=0, spirit=0, intel=0, str_=0, percep=0, luck=0
+            )
+            await self.db.execute(
+                """
+                UPDATE players
+                SET realm_id = 'realm_001',
+                    experience = 0,
+                    spirit_stone = 100,
+                    bone = 0,
+                    spirit = 0,
+                    intel = 0,
+                    str = 0,
+                    percep = 0,
+                    luck = 0,
+                    health = ?,
+                    mp = ?,
+                    stamina = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (
+                    battle_attrs["max_health"],
+                    battle_attrs["max_mp"],
+                    battle_attrs["max_stamina"],
+                    player_id,
+                ),
+            )
+            await self.db.commit()
+
+            # 更新缓存
+            if user_id and user_id in self._registered_players_cache:
+                del self._registered_players_cache[user_id]
+
+            logger.info(f"玩家 {player_id} 数据已重置")
+            return await self.get_player_by_id(player_id)
+        except Exception as e:
+            await self.db.rollback()
+            logger.error(f"重置玩家 {player_id} 失败: {e}")
+            return None
+
+    async def soft_delete_player(
+        self, player_id: str, user_id: str = None, ban_reason: str = None
+    ) -> bool:
+        """
+        软删除玩家（封禁/BAN）
+
+        不真正删除数据，而是将 is_deleted 标记为 1，
+        被软删除的玩家无法正常使用游戏功能。
+
+        Args:
+            player_id: 玩家ID
+            user_id: 用户ID（可选，用于更新缓存）
+            ban_reason: 封禁理由（可选，记录封禁原因）
+
+        Returns:
+            bool: 是否操作成功
+        """
+        try:
+            cursor = await self.db.execute(
+                """
+                UPDATE players
+                SET is_deleted = 1,
+                    ban_reason = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (ban_reason, player_id),
+            )
+            await self.db.commit()
+
+            # 清理缓存
+            if user_id and user_id in self._registered_players_cache:
+                del self._registered_players_cache[user_id]
+
+            reason_text = f"，理由：{ban_reason}" if ban_reason else ""
+            logger.info(f"玩家 {player_id} 已被软删除（封禁）{reason_text}")
+            return cursor.rowcount > 0
+        except Exception as e:
+            await self.db.rollback()
+            logger.error(f"软删除玩家 {player_id} 失败: {e}")
+            return False
+
+    async def restore_player(self, player_id: str) -> bool:
+        """
+        恢复被软删除的玩家（解封）
+
+        将 is_deleted 标记重置为 0，清空 ban_reason，恢复玩家正常使用权限。
+
+        Args:
+            player_id: 玩家ID
+
+        Returns:
+            bool: 是否操作成功
+        """
+        try:
+            cursor = await self.db.execute(
+                """
+                UPDATE players
+                SET is_deleted = 0,
+                    ban_reason = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (player_id,),
+            )
+            await self.db.commit()
+
+            logger.info(f"玩家 {player_id} 已恢复（解封）")
+            return cursor.rowcount > 0
+        except Exception as e:
+            await self.db.rollback()
+            logger.error(f"恢复玩家 {player_id} 失败: {e}")
+            return False
+
+    async def is_player_banned(self, player_id: str) -> bool:
+        """
+        检查玩家是否被封禁
+
+        Args:
+            player_id: 玩家ID
+
+        Returns:
+            bool: 是否被封禁
+        """
+        row = await self.db.fetch_one(
+            "SELECT is_deleted FROM players WHERE id = ?", (player_id,)
+        )
+        return bool(row and row.get("is_deleted"))
+
+    async def get_ban_info(self, player_id: str) -> dict:
+        """
+        获取玩家封禁信息
+
+        Args:
+            player_id: 玩家ID
+
+        Returns:
+            dict: 包含 is_banned 和 ban_reason 的字典
+        """
+        row = await self.db.fetch_one(
+            "SELECT is_deleted, ban_reason FROM players WHERE id = ?", (player_id,)
+        )
+        if not row:
+            return {"is_banned": False, "ban_reason": None}
+        return {
+            "is_banned": bool(row.get("is_deleted")),
+            "ban_reason": row.get("ban_reason"),
+        }
 
     async def modify_resource(self, player_id: str, field: str, value: int) -> Optional[Player]:
         allowed_fields = [

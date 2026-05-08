@@ -189,8 +189,12 @@ class CultivationService:
         if encounter_result:
             message_lines.append(f"【奇遇】{encounter_result['message']}")
 
+        # 获取下一境界所需修为作为显示分母，如果没有下一境界则显示当前境界要求
+        next_realm_for_display = await self.get_next_realm(current_realm.level)
+        exp_required = next_realm_for_display.experience_required if next_realm_for_display else current_realm.experience_required
+
         message_lines.append(f"当前境界：{current_realm.name}")
-        message_lines.append(f"当前修为：{current_exp}/{current_realm.experience_required}")
+        message_lines.append(f"当前修为：{current_exp}/{exp_required}")
         message_lines.append(f"你感到一阵疲惫，需要打坐调息{cooldown_minutes}分钟方可再次闭关。")
 
         logger.info(

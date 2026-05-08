@@ -88,6 +88,9 @@ class AdminServer:
         self._app.router.add_get("/api/xiuxian/players/{player_id}", self._handle_player_detail)
         self._app.router.add_post("/api/xiuxian/players/{player_id}", self._handle_update_player)
         self._app.router.add_post("/api/xiuxian/players/{player_id}/delete", self._handle_delete_player)
+        self._app.router.add_post("/api/xiuxian/players/{player_id}/reset", self._handle_reset_player)
+        self._app.router.add_post("/api/xiuxian/players/{player_id}/ban", self._handle_ban_player)
+        self._app.router.add_post("/api/xiuxian/players/{player_id}/unban", self._handle_unban_player)
         # 物品管理
         self._app.router.add_get("/api/xiuxian/items", self._handle_items)
         self._app.router.add_post("/api/xiuxian/items", self._handle_create_item)
@@ -311,7 +314,34 @@ class AdminServer:
         if auth_error:
             return auth_error
         player_id = request.match_info["player_id"]
-        result = await self.admin_api.player_service.delete_player(player_id)
+        result = await self.admin_api.delete_player(player_id)
+        return self._ok(result)
+
+    async def _handle_reset_player(self, request: web.Request) -> web.Response:
+        """重置玩家数据"""
+        auth_error = self._require_auth(request)
+        if auth_error:
+            return auth_error
+        player_id = request.match_info["player_id"]
+        result = await self.admin_api.reset_player(player_id)
+        return self._ok(result)
+
+    async def _handle_ban_player(self, request: web.Request) -> web.Response:
+        """封禁玩家"""
+        auth_error = self._require_auth(request)
+        if auth_error:
+            return auth_error
+        player_id = request.match_info["player_id"]
+        result = await self.admin_api.ban_player(player_id)
+        return self._ok(result)
+
+    async def _handle_unban_player(self, request: web.Request) -> web.Response:
+        """解封玩家"""
+        auth_error = self._require_auth(request)
+        if auth_error:
+            return auth_error
+        player_id = request.match_info["player_id"]
+        result = await self.admin_api.unban_player(player_id)
         return self._ok(result)
 
     async def _handle_items(self, request: web.Request) -> web.Response:
