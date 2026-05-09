@@ -2,8 +2,8 @@
 战斗属性计算工具
 根据设计大纲中的公式，由后天属性 + 境界等级动态计算战斗属性
 """
-from typing import Dict, Any, Tuple
 
+from typing import Any
 
 BASE_RATE = 2.0
 SMALL_RATE = 1.06
@@ -15,7 +15,7 @@ DEF_COEFF = 2
 DODGE_CAP = 0.60
 
 
-def parse_realm_level(level: int) -> Tuple[int, int]:
+def parse_realm_level(level: int) -> tuple[int, int]:
     """
     将境界等级解析为（大境界序号, 小境界序号）
 
@@ -57,7 +57,7 @@ def calc_realm_multiplier(level: int) -> float:
         float: 境界乘数
     """
     major, minor = parse_realm_level(level)
-    return (BASE_RATE ** major) * (SMALL_RATE ** minor)
+    return (BASE_RATE**major) * (SMALL_RATE**minor)
 
 
 def calc_battle_attrs(
@@ -68,7 +68,7 @@ def calc_battle_attrs(
     str_: int,
     percep: int,
     luck: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     根据后天属性和境界等级计算战斗属性（衍生属性）
 

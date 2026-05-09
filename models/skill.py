@@ -2,25 +2,25 @@
 功法数据模型
 定义游戏中功法技能的数据结构
 """
+
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 
 
 @dataclass
 class Skill:
     """功法数据模型"""
-    
+
     id: str
     name: str
     description: str
     skill_type: str  # cultivation, combat, passive
-    realm_requirement: Optional[str] = None
+    realm_requirement: str | None = None
     experience_gain: int = 10
     damage: int = 0
     cooldown: int = 0
-    created_at: Optional[datetime] = None
-    
+    created_at: datetime | None = None
+
     def to_dict(self) -> dict:
         """转换为字典"""
         return {
@@ -34,7 +34,7 @@ class Skill:
             "cooldown": self.cooldown,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> "Skill":
         """从字典创建实例"""
@@ -47,21 +47,23 @@ class Skill:
             experience_gain=data.get("experience_gain", 10),
             damage=data.get("damage", 0),
             cooldown=data.get("cooldown", 0),
-            created_at=datetime.fromisoformat(data["created_at"]) if data.get("created_at") else None,
+            created_at=datetime.fromisoformat(data["created_at"])
+            if data.get("created_at")
+            else None,
         )
 
 
 @dataclass
 class PlayerSkill:
     """玩家功法数据模型"""
-    
+
     id: str
     player_id: str
     skill_id: str
     level: int = 1
     experience: int = 0
-    created_at: Optional[datetime] = None
-    
+    created_at: datetime | None = None
+
     def to_dict(self) -> dict:
         """转换为字典"""
         return {

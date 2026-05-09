@@ -2,9 +2,11 @@
 配置管理器
 负责插件配置的加载、保存和管理
 """
+
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
+
 from astrbot.api import logger
 from astrbot.api.star import Context
 from astrbot.core.star import StarTools
@@ -27,19 +29,7 @@ class ConfigManager:
             "three_day_reward_rate": 2,
             "seven_day_reward_rate": 3,
         },
-        "player": {
-        },
-        "realms": [
-            {"id": "realm_001", "name": "练气期", "level": 1, "exp_required": 100},
-            {"id": "realm_002", "name": "筑基期", "level": 2, "exp_required": 500},
-            {"id": "realm_003", "name": "金丹期", "level": 3, "exp_required": 2000},
-            {"id": "realm_004", "name": "元婴期", "level": 4, "exp_required": 8000},
-            {"id": "realm_005", "name": "化神期", "level": 5, "exp_required": 30000},
-            {"id": "realm_006", "name": "炼虚期", "level": 6, "exp_required": 100000},
-            {"id": "realm_007", "name": "合体期", "level": 7, "exp_required": 500000},
-            {"id": "realm_008", "name": "大乘期", "level": 8, "exp_required": 2000000},
-            {"id": "realm_009", "name": "渡劫期", "level": 9, "exp_required": 10000000},
-        ],
+        "player": {},
         "seclusion": {
             "success_probability": 0.60,
             "failure_probability": 0.25,
@@ -85,82 +75,9 @@ class ConfigManager:
                 },
             ],
         },
-        "items": [
-            {
-                "id": "item_001",
-                "name": "回春丹",
-                "description": "恢复50点生命值",
-                "item_type": "consumable",
-                "rarity": "common",
-                "effect_type": "heal",
-                "effect_value": 50,
-                "price": 50,
-            },
-            {
-                "id": "item_002",
-                "name": "聚灵丹",
-                "description": "增加100点修为",
-                "item_type": "consumable",
-                "rarity": "uncommon",
-                "effect_type": "exp",
-                "effect_value": 100,
-                "price": 200,
-            },
-            {
-                "id": "item_003",
-                "name": "灵石",
-                "description": "修仙界通用货币",
-                "item_type": "currency",
-                "rarity": "common",
-                "effect_type": "spirit_stone",
-                "effect_value": 1,
-                "price": 1,
-            },
-        ],
-        "skills": [
-            {
-                "id": "skill_001",
-                "name": "基础吐纳术",
-                "description": "最基础的修炼功法",
-                "skill_type": "cultivation",
-                "realm_requirement": "realm_001",
-                "experience_gain": 10,
-            },
-            {
-                "id": "skill_002",
-                "name": "劈空掌",
-                "description": "基础攻击技能",
-                "skill_type": "combat",
-                "realm_requirement": "realm_001",
-                "damage": 15,
-                "cooldown": 3,
-            },
-        ],
-        "events": [
-            {
-                "id": "event_001",
-                "name": "灵草奇遇",
-                "description": "你在山间发现了一株灵草",
-                "event_type": "explore",
-                "trigger_condition": "explore",
-                "reward_type": "item",
-                "reward_value": 1,
-                "probability": 0.3,
-            },
-            {
-                "id": "event_002",
-                "name": "妖兽袭击",
-                "description": "一只妖兽突然出现",
-                "event_type": "combat",
-                "trigger_condition": "explore",
-                "reward_type": "spirit_stone",
-                "reward_value": 50,
-                "probability": 0.2,
-            },
-        ],
     }
 
-    def __init__(self, context: Context, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, context: Context, config: dict[str, Any] | None = None):
         """
         初始化配置管理器
 
@@ -170,8 +87,10 @@ class ConfigManager:
         """
         self.context = context
         self.plugin_name = "astrbot_plugin_xiuxian_shell"
-        self._config: Dict[str, Any] = {}
-        self._config_file = Path(StarTools.get_data_dir(self.plugin_name)) / "config.json"
+        self._config: dict[str, Any] = {}
+        self._config_file = (
+            Path(StarTools.get_data_dir(self.plugin_name)) / "config.json"
+        )
         self._load_config(config)
 
     def _deep_copy(self, obj: Any) -> Any:
@@ -183,7 +102,7 @@ class ConfigManager:
         else:
             return obj
 
-    def _load_config(self, external_config: Optional[Dict[str, Any]] = None):
+    def _load_config(self, external_config: dict[str, Any] | None = None):
         """
         加载配置
 
@@ -195,7 +114,7 @@ class ConfigManager:
         # 从文件加载持久化配置
         if self._config_file.exists():
             try:
-                with open(self._config_file, "r", encoding="utf-8") as f:
+                with open(self._config_file, encoding="utf-8") as f:
                     file_config = json.load(f)
                 self._merge_config(self._config, file_config)
                 logger.info(f"已从文件加载配置: {self._config_file}")
@@ -216,10 +135,10 @@ class ConfigManager:
         except Exception as e:
             logger.error(f"保存配置文件失败: {e}")
 
-    def _merge_config(self, base: Dict[str, Any], override: Dict[str, Any]):
+    def _merge_config(self, base: dict[str, Any], override: dict[str, Any]):
         """
         深度合并配置
-        
+
         Args:
             base: 基础配置
             override: 覆盖配置
@@ -233,11 +152,11 @@ class ConfigManager:
     def get(self, key: str, default: Any = None) -> Any:
         """
         获取配置项
-        
+
         Args:
             key: 配置键，支持点号分隔的路径
             default: 默认值
-            
+
         Returns:
             Any: 配置值
         """
@@ -272,16 +191,14 @@ class ConfigManager:
     def get_db_path(self) -> str:
         """
         获取数据库路径
-        
+
         Returns:
             str: 数据库文件完整路径
         """
         db_name = self.get("database.name", "xiuxian.db")
-        return str(
-            Path(StarTools.get_data_dir(self.plugin_name)) / db_name
-        )
+        return str(Path(StarTools.get_data_dir(self.plugin_name)) / db_name)
 
-    def get_all(self) -> Dict[str, Any]:
+    def get_all(self) -> dict[str, Any]:
         """
         获取所有有效配置
 
@@ -298,12 +215,14 @@ class ConfigManager:
                     result[section_key] = {}
                     for field_key in section_value.keys():
                         if field_key in self._config[section_key]:
-                            result[section_key][field_key] = self._config[section_key][field_key]
+                            result[section_key][field_key] = self._config[section_key][
+                                field_key
+                            ]
                 else:
                     result[section_key] = self._config[section_key]
         return result
 
-    def update(self, config: Dict[str, Any]):
+    def update(self, config: dict[str, Any]):
         """
         更新配置并持久化到文件
 

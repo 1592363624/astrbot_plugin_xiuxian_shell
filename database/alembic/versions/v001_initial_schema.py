@@ -6,15 +6,16 @@ Revision ID: v001
 Revises:
 Create Date: 2026-05-07
 """
-from typing import Sequence, Union
-from alembic import op
-import sqlalchemy as sa
 
+from collections.abc import Sequence
+
+import sqlalchemy as sa
+from alembic import op
 
 revision: str = "v001"
-down_revision: Union[str, None] = None
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -32,8 +33,12 @@ def upgrade() -> None:
         sa.Column("max_health", sa.Integer, server_default="100"),
         sa.Column("attack", sa.Integer, server_default="10"),
         sa.Column("defense", sa.Integer, server_default="5"),
-        sa.Column("created_at", sa.TIMESTAMP, server_default=sa.func.current_timestamp()),
-        sa.Column("updated_at", sa.TIMESTAMP, server_default=sa.func.current_timestamp()),
+        sa.Column(
+            "created_at", sa.TIMESTAMP, server_default=sa.func.current_timestamp()
+        ),
+        sa.Column(
+            "updated_at", sa.TIMESTAMP, server_default=sa.func.current_timestamp()
+        ),
     )
 
     # 物品表
@@ -48,7 +53,9 @@ def upgrade() -> None:
         sa.Column("effect_value", sa.Integer, server_default="0"),
         sa.Column("price", sa.Integer, server_default="0"),
         sa.Column("is_usable", sa.Integer, server_default="1"),
-        sa.Column("created_at", sa.TIMESTAMP, server_default=sa.func.current_timestamp()),
+        sa.Column(
+            "created_at", sa.TIMESTAMP, server_default=sa.func.current_timestamp()
+        ),
     )
 
     # 玩家背包表
@@ -59,7 +66,9 @@ def upgrade() -> None:
         sa.Column("item_id", sa.Text, nullable=False),
         sa.Column("quantity", sa.Integer, server_default="1"),
         sa.Column("equipped", sa.Integer, server_default="0"),
-        sa.Column("created_at", sa.TIMESTAMP, server_default=sa.func.current_timestamp()),
+        sa.Column(
+            "created_at", sa.TIMESTAMP, server_default=sa.func.current_timestamp()
+        ),
         sa.UniqueConstraint("player_id", "item_id"),
     )
 
@@ -74,7 +83,9 @@ def upgrade() -> None:
         sa.Column("experience_gain", sa.Integer, server_default="10"),
         sa.Column("damage", sa.Integer, server_default="0"),
         sa.Column("cooldown", sa.Integer, server_default="0"),
-        sa.Column("created_at", sa.TIMESTAMP, server_default=sa.func.current_timestamp()),
+        sa.Column(
+            "created_at", sa.TIMESTAMP, server_default=sa.func.current_timestamp()
+        ),
     )
 
     # 玩家功法表
@@ -85,7 +96,9 @@ def upgrade() -> None:
         sa.Column("skill_id", sa.Text, nullable=False),
         sa.Column("level", sa.Integer, server_default="1"),
         sa.Column("experience", sa.Integer, server_default="0"),
-        sa.Column("created_at", sa.TIMESTAMP, server_default=sa.func.current_timestamp()),
+        sa.Column(
+            "created_at", sa.TIMESTAMP, server_default=sa.func.current_timestamp()
+        ),
         sa.UniqueConstraint("player_id", "skill_id"),
     )
 
@@ -100,7 +113,9 @@ def upgrade() -> None:
         sa.Column("health_bonus", sa.Integer, server_default="0"),
         sa.Column("attack_bonus", sa.Integer, server_default="0"),
         sa.Column("defense_bonus", sa.Integer, server_default="0"),
-        sa.Column("created_at", sa.TIMESTAMP, server_default=sa.func.current_timestamp()),
+        sa.Column(
+            "created_at", sa.TIMESTAMP, server_default=sa.func.current_timestamp()
+        ),
     )
 
     # 游戏事件表
@@ -115,7 +130,9 @@ def upgrade() -> None:
         sa.Column("reward_value", sa.Integer, server_default="0"),
         sa.Column("probability", sa.REAL, server_default="0.5"),
         sa.Column("is_active", sa.Integer, server_default="1"),
-        sa.Column("created_at", sa.TIMESTAMP, server_default=sa.func.current_timestamp()),
+        sa.Column(
+            "created_at", sa.TIMESTAMP, server_default=sa.func.current_timestamp()
+        ),
     )
 
     # 玩家事件记录表
@@ -124,7 +141,9 @@ def upgrade() -> None:
         sa.Column("id", sa.Text, primary_key=True),
         sa.Column("player_id", sa.Text, nullable=False),
         sa.Column("event_id", sa.Text, nullable=False),
-        sa.Column("triggered_at", sa.TIMESTAMP, server_default=sa.func.current_timestamp()),
+        sa.Column(
+            "triggered_at", sa.TIMESTAMP, server_default=sa.func.current_timestamp()
+        ),
     )
 
 

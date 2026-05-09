@@ -3,20 +3,31 @@
 处理战斗相关的业务逻辑
 战斗属性（衍生属性）由基础属性+境界等级动态计算，不存入数据库
 """
+
 import random
-from typing import Dict, Any, Optional
-from astrbot.api import logger
+from typing import TYPE_CHECKING, Any
+
 from ..database import DatabaseManager
 from ..utils.attributes import calc_battle_attrs
+
+if TYPE_CHECKING:
+    from .cultivation_service import CultivationService
 
 
 class CombatService:
     """战斗服务类"""
 
-    def __init__(self, db_manager: DatabaseManager):
+    def __init__(
+        self,
+        db_manager: DatabaseManager,
+        cultivation_service: "CultivationService" = None,
+    ):
         self.db = db_manager
+        self.cultivation_service = cultivation_service
 
-    async def _get_player_with_battle_attrs(self, player_id: str) -> Optional[Dict[str, Any]]:
+    async def _get_player_with_battle_attrs(
+        self, player_id: str
+    ) -> dict[str, Any] | None:
         """
         获取玩家数据并附加动态计算的战斗属性
 
@@ -27,17 +38,16 @@ class CombatService:
             Optional[Dict]: 玩家数据（含战斗属性），不存在返回None
         """
         player = await self.db.fetch_one(
-            "SELECT * FROM players WHERE id = ?",
-            (player_id,)
+            "SELECT * FROM players WHERE id = ?", (player_id,)
         )
         if not player:
             return None
 
-        realm = await self.db.fetch_one(
-            "SELECT level FROM realms WHERE id = ?",
-            (player["realm_id"],)
-        )
-        realm_level = realm["level"] if realm else 1
+        realm_level = 1
+        if self.cultivation_service:
+            realm = await self.cultivation_service.get_realm_by_id(player["realm_id"])
+            if realm:
+                realm_level = realm.level
 
         battle_attrs = calc_battle_attrs(
             level=realm_level,
@@ -53,7 +63,9 @@ class CombatService:
         result.update(battle_attrs)
         return result
 
-    async def battle(self, attacker_id: str, defender_id: Optional[str] = None) -> Dict[str, Any]:
+    async def battle(
+        self, attacker_id: str, defender_id: str | None = None
+    ) -> dict[str, Any]:
         attacker = await self._get_player_with_battle_attrs(attacker_id)
         if not attacker:
             raise ValueError("攻击者不存在")
@@ -68,7 +80,7 @@ class CombatService:
 
         return result
 
-    async def _pvp_battle(self, attacker: dict, defender: dict) -> Dict[str, Any]:
+    async def _pvp_battle(self, attacker: dict, defender: dict) -> dict[str, Any]:
         attacker_power = attacker["attack"] + random.randint(1, 10)
         defender_power = defender["defense"] + random.randint(1, 10)
 
@@ -79,12 +91,12 @@ class CombatService:
             new_health = max(0, defender["health"] - damage)
             await self.db.execute(
                 "UPDATE players SET health = ? WHERE id = ?",
-                (new_health, defender["id"])
+                (new_health, defender["id"]),
             )
 
             await self.db.execute(
                 "UPDATE players SET spirit_stone = spirit_stone + ? WHERE id = ?",
-                (reward, attacker["id"])
+                (reward, attacker["id"]),
             )
             await self.db.commit()
 
@@ -101,7 +113,7 @@ class CombatService:
             new_health = max(0, attacker["health"] - damage)
             await self.db.execute(
                 "UPDATE players SET health = ? WHERE id = ?",
-                (new_health, attacker["id"])
+                (new_health, attacker["id"]),
             )
             await self.db.commit()
 
@@ -113,7 +125,7 @@ class CombatService:
                 "message": f"【{attacker['username']}】挑战【{defender['username']}】失败，受到 {damage} 点伤害",
             }
 
-    async def _pve_battle(self, player: dict) -> Dict[str, Any]:
+    async def _pve_battle(self, player: dict) -> dict[str, Any]:
         monster_level = max(1, player["attack"] // 10)
         monster = {
             "name": f"妖兽Lv.{monster_level}",
@@ -126,13 +138,17 @@ class CombatService:
         monster_hp = monster["health"]
 
         while player_hp > 0 and monster_hp > 0:
-            player_damage = max(1, player["attack"] - monster["defense"] + random.randint(-3, 5))
+            player_damage = max(
+                1, player["attack"] - monster["defense"] + random.randint(-3, 5)
+            )
             monster_hp -= player_damage
 
             if monster_hp <= 0:
                 break
 
-            monster_damage = max(1, monster["attack"] - player["defense"] + random.randint(-3, 3))
+            monster_damage = max(
+                1, monster["attack"] - player["defense"] + random.randint(-3, 3)
+            )
             player_hp -= monster_damage
 
         if player_hp > 0:
@@ -140,13 +156,13 @@ class CombatService:
             stone_reward = random.randint(10, 30) * monster_level
 
             await self.db.execute(
-                """UPDATE players 
-                SET health = ?, 
-                    experience = experience + ?, 
+                """UPDATE players
+                SET health = ?,
+                    experience = experience + ?,
                     spirit_stone = spirit_stone + ?,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?""",
-                (player_hp, exp_reward, stone_reward, player["id"])
+                (player_hp, exp_reward, stone_reward, player["id"]),
             )
             await self.db.commit()
 
@@ -160,8 +176,7 @@ class CombatService:
             }
         else:
             await self.db.execute(
-                "UPDATE players SET health = 1 WHERE id = ?",
-                (player["id"],)
+                "UPDATE players SET health = 1 WHERE id = ?", (player["id"],)
             )
             await self.db.commit()
 

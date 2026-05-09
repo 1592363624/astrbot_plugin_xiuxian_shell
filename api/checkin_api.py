@@ -3,7 +3,9 @@
 提供签到相关的接口，供命令层和后台管理调用
 HTTP处理方法兼容AstrBot Dashboard(Quart)路由分发机制
 """
-from typing import Dict, Any
+
+from typing import Any
+
 from quart import jsonify, request
 
 from ..services import CheckinService, PlayerService
@@ -113,7 +115,7 @@ class CheckinAPI:
 
     # ==================== HTTP API接口（Quart兼容） ====================
 
-    async def api_get_status(self, player_id=None, **kwargs) -> Dict[str, Any]:
+    async def api_get_status(self, player_id=None, **kwargs) -> dict[str, Any]:
         """获取签到状态（HTTP API）"""
         if player_id is None:
             return jsonify({"code": -1, "message": "缺少player_id"}), 400
@@ -124,19 +126,21 @@ class CheckinAPI:
         except Exception as e:
             return jsonify({"code": -1, "message": str(e)}), 400
 
-    async def api_get_records(self, player_id=None, **kwargs) -> Dict[str, Any]:
+    async def api_get_records(self, player_id=None, **kwargs) -> dict[str, Any]:
         """获取玩家签到记录（HTTP API）"""
         if player_id is None:
             return jsonify({"code": -1, "message": "缺少player_id"}), 400
 
         limit = int(request.args.get("limit", 30))
         try:
-            records = await self.checkin_service.get_player_checkin_records(player_id, limit)
+            records = await self.checkin_service.get_player_checkin_records(
+                player_id, limit
+            )
             return jsonify({"code": 0, "data": records})
         except Exception as e:
             return jsonify({"code": -1, "message": str(e)}), 400
 
-    async def api_get_ranking(self, **kwargs) -> Dict[str, Any]:
+    async def api_get_ranking(self, **kwargs) -> dict[str, Any]:
         """获取签到排行（HTTP API）"""
         limit = int(request.args.get("limit", 10))
         try:
@@ -145,7 +149,7 @@ class CheckinAPI:
         except Exception as e:
             return jsonify({"code": -1, "message": str(e)}), 400
 
-    async def api_get_all_records(self, **kwargs) -> Dict[str, Any]:
+    async def api_get_all_records(self, **kwargs) -> dict[str, Any]:
         """获取所有签到记录（HTTP API，后台管理用）"""
         page = int(request.args.get("page", 1))
         page_size = int(request.args.get("page_size", 20))

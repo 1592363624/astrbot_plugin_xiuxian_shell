@@ -2,26 +2,32 @@
 玩家API
 提供玩家相关的接口，供命令层和后台管理调用
 """
-from typing import Dict, Any
 
-from ..services import PlayerService
+from ..services import DeepSeclusionService, PlayerService
 from ..utils.attributes import calc_battle_attrs
 
 
 class PlayerAPI:
     """玩家API类"""
 
-    def __init__(self, player_service: PlayerService):
+    def __init__(
+        self,
+        player_service: PlayerService,
+        deep_seclusion_service: DeepSeclusionService = None,
+        cultivation_service=None,
+    ):
         self.player_service = player_service
+        self.deep_seclusion_service = deep_seclusion_service
+        self.cultivation_service = cultivation_service
 
     async def create_player(self, user_id: str, username: str) -> str:
         try:
             player = await self.player_service.create_player(user_id, username)
-            realm = await self.player_service.db.fetch_one(
-                "SELECT name FROM realms WHERE id = ?",
-                (player.realm_id,),
-            )
-            realm_name = realm["name"] if realm else "未知"
+            realm_name = "凡人"
+            if self.cultivation_service:
+                realm = await self.cultivation_service.get_realm_by_id(player.realm_id)
+                if realm:
+                    realm_name = realm.name
             return (
                 f"注册成功！欢迎 {username} 进入修仙世界！\n"
                 f"当前境界：{realm_name}\n"
@@ -40,19 +46,19 @@ class PlayerAPI:
         if error:
             return error
 
-        realm = await self.player_service.db.fetch_one(
-            "SELECT name, level FROM realms WHERE id = ?",
-            (player_dict["realm_id"],),
-        )
-        realm_name = realm["name"] if realm else "未知"
-        realm_level = realm["level"] if realm else 1
+        realm_name = "凡人"
+        realm_level = 1
+        if self.cultivation_service:
+            realm = await self.cultivation_service.get_realm_by_id(player_dict["realm_id"])
+            if realm:
+                realm_name = realm.name
+                realm_level = realm.level
 
-        # 获取下一境界所需修为作为显示分母
-        next_realm = await self.player_service.db.fetch_one(
-            "SELECT experience_required FROM realms WHERE level > ? ORDER BY level ASC LIMIT 1",
-            (realm_level,),
-        )
-        exp_required = next_realm["experience_required"] if next_realm else 0
+        exp_required = 0
+        if self.cultivation_service:
+            next_realm = await self.cultivation_service.get_next_realm(realm_level)
+            if next_realm:
+                exp_required = next_realm.experience_required
 
         battle_attrs = calc_battle_attrs(
             level=realm_level,
@@ -64,25 +70,47 @@ class PlayerAPI:
             luck=player_dict["luck"],
         )
 
-        status = f"""
-【修仙状态】
-道号：{player_dict['username']}
-境界：{realm_name}
-修为：{player_dict['experience']}/{exp_required}
-灵石：{player_dict['spirit_stone']}
+        # 查询玩家生效状态
+        state_lines = []
+        if self.deep_seclusion_service:
+            states = await self.deep_seclusion_service.get_player_states(
+                player_dict["id"]
+            )
+            if states:
+                state_names = []
+                for s in states:
+                    state_type = s["state_type"]
+                    if state_type == "dao_heart_broken":
+                        state_names.append("【道心破碎】")
+                    elif state_type == "peace_mode":
+                        state_names.append("【避世】")
+                    else:
+                        state_names.append(f"【{state_type}】")
+                state_lines.append("———当前状态———")
+                state_lines.append(" ".join(state_names))
 
-———战斗属性———
-气血：{player_dict['health']}/{battle_attrs['max_health']}
-法力：{player_dict['mp']}/{battle_attrs['max_mp']}
-体力：{player_dict['stamina']}/{battle_attrs['max_stamina']}
-物攻：{battle_attrs['attack']} 法攻：{battle_attrs['magic_attack']}
-物防：{battle_attrs['defense']} 法防：{battle_attrs['magic_defense']}
-速度：{battle_attrs['speed']} 闪避：{battle_attrs['dodge']:.1%}
-———后天属性———
-根骨:{player_dict['bone']} 神识:{player_dict['spirit']} 悟性:{player_dict['intel']}
-体魄:{player_dict['str']} 灵觉:{player_dict['percep']} 机缘:{player_dict['luck']}
-        """
-        return status.strip()
+        status_parts = [
+            "【修仙状态】",
+            f"道号：{player_dict['username']}",
+            f"境界：{realm_name}",
+            f"修为：{player_dict['experience']}/{exp_required}",
+            f"灵石：{player_dict['spirit_stone']}",
+            "",
+            "———战斗属性———",
+            f"气血：{player_dict['health']}/{battle_attrs['max_health']}",
+            f"法力：{player_dict['mp']}/{battle_attrs['max_mp']}",
+            f"体力：{player_dict['stamina']}/{battle_attrs['max_stamina']}",
+            f"物攻：{battle_attrs['attack']} 法攻：{battle_attrs['magic_attack']}",
+            f"物防：{battle_attrs['defense']} 法防：{battle_attrs['magic_defense']}",
+            f"速度：{battle_attrs['speed']} 闪避：{battle_attrs['dodge']:.1%}",
+            "———后天属性———",
+            f"根骨:{player_dict['bone']} 神识:{player_dict['spirit']} 悟性:{player_dict['intel']}",
+            f"体魄:{player_dict['str']} 灵觉:{player_dict['percep']} 机缘:{player_dict['luck']}",
+        ]
+        if state_lines:
+            status_parts.extend([""] + state_lines)
+
+        return "\n".join(status_parts)
 
     async def change_username(self, user_id: str, new_username: str) -> str:
         result, error = await self.player_service.change_username(user_id, new_username)

@@ -2,12 +2,13 @@
 数据库迁移管理器
 基于 Alembic 实现数据库版本管理和迁移脚本执行
 """
+
 import asyncio
 from pathlib import Path
-from typing import Optional
 
 from alembic import command
 from alembic.config import Config as AlembicConfig
+
 from astrbot.api import logger
 
 from ..db_manager import DatabaseManager
@@ -17,9 +18,9 @@ class MigrationManager:
     """数据库迁移管理器（基于 Alembic）"""
 
     # 插件根目录，用于定位 alembic 配置
-    _plugin_root: Optional[Path] = None
+    _plugin_root: Path | None = None
     # Alembic 目录路径
-    _alembic_dir: Optional[Path] = None
+    _alembic_dir: Path | None = None
 
     def __init__(self, db_manager: DatabaseManager):
         """

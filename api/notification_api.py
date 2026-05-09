@@ -4,7 +4,7 @@
 HTTP处理方法兼容AstrBot Dashboard(Quart)路由分发机制
 """
 
-from typing import Dict, Any, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from quart import jsonify, request
 
@@ -31,9 +31,9 @@ class NotificationAPI:
         title: str,
         content: str,
         target_type: str = "all",
-        target_ids: Optional[List[str]] = None,
+        target_ids: list[str] | None = None,
         sender_id: str = "system",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         发送通知（通用方法，HTTP和命令共用）
 
@@ -58,7 +58,10 @@ class NotificationAPI:
             return {"success": False, "error": "指定目标类型时必须提供target_ids"}
 
         if target_type == "realm" and not target_ids:
-            return {"success": False, "error": "境界目标类型时必须提供target_ids(境界ID)"}
+            return {
+                "success": False,
+                "error": "境界目标类型时必须提供target_ids(境界ID)",
+            }
 
         return await self.notification_service.send_notification(
             title=title,
@@ -70,7 +73,7 @@ class NotificationAPI:
 
     async def get_notification_history(
         self, page: int = 1, page_size: int = 20
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         获取通知历史（通用方法，HTTP和命令共用）
 
@@ -85,7 +88,7 @@ class NotificationAPI:
             page=page, page_size=page_size
         )
 
-    async def get_notification_detail(self, notification_id: int) -> Dict[str, Any]:
+    async def get_notification_detail(self, notification_id: int) -> dict[str, Any]:
         """
         获取通知详情（通用方法，HTTP和命令共用）
 
@@ -102,7 +105,7 @@ class NotificationAPI:
             return {"success": False, "error": "通知不存在"}
         return {"success": True, "data": notification}
 
-    async def delete_notification(self, notification_id: int) -> Dict[str, Any]:
+    async def delete_notification(self, notification_id: int) -> dict[str, Any]:
         """
         删除通知记录（通用方法，HTTP和命令共用）
 
@@ -120,11 +123,11 @@ class NotificationAPI:
     async def send_notification_by_template(
         self,
         template_id: str,
-        variables: Dict[str, Any],
+        variables: dict[str, Any],
         target_type: str = "all",
-        target_ids: Optional[List[str]] = None,
+        target_ids: list[str] | None = None,
         sender_id: str = "system",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         使用模板发送通知（通用方法，HTTP和命令共用）
 
@@ -154,7 +157,7 @@ class NotificationAPI:
             sender_id=sender_id,
         )
 
-    async def get_templates(self) -> Dict[str, Any]:
+    async def get_templates(self) -> dict[str, Any]:
         """
         获取所有通知模板（通用方法，HTTP和命令共用）
 
@@ -172,11 +175,11 @@ class NotificationAPI:
         content: str,
         cron_expression: str,
         target_type: str = "all",
-        target_ids: Optional[List[str]] = None,
-        template_id: Optional[str] = None,
-        template_variables: Optional[Dict[str, Any]] = None,
+        target_ids: list[str] | None = None,
+        template_id: str | None = None,
+        template_variables: dict[str, Any] | None = None,
         created_by: str = "system",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         创建定时通知（通用方法，HTTP和命令共用）
 
@@ -205,7 +208,10 @@ class NotificationAPI:
 
         parts = cron_expression.strip().split()
         if len(parts) != 5:
-            return {"success": False, "error": "Cron表达式格式错误，需要5个字段(分 时 日 月 周)"}
+            return {
+                "success": False,
+                "error": "Cron表达式格式错误，需要5个字段(分 时 日 月 周)",
+            }
 
         record = await self.notification_service.create_scheduled_notification(
             title=title,
@@ -221,7 +227,7 @@ class NotificationAPI:
 
     async def get_scheduled_notifications(
         self, page: int = 1, page_size: int = 20
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         获取定时通知列表（通用方法，HTTP和命令共用）
 
@@ -239,7 +245,7 @@ class NotificationAPI:
 
     async def toggle_scheduled_notification(
         self, schedule_id: int, enabled: bool
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         启用/禁用定时通知（通用方法，HTTP和命令共用）
 
@@ -255,9 +261,12 @@ class NotificationAPI:
         )
         if not success:
             return {"success": False, "error": "定时通知不存在"}
-        return {"success": True, "message": f"已{'启用' if enabled else '禁用'}定时通知"}
+        return {
+            "success": True,
+            "message": f"已{'启用' if enabled else '禁用'}定时通知",
+        }
 
-    async def delete_scheduled_notification(self, schedule_id: int) -> Dict[str, Any]:
+    async def delete_scheduled_notification(self, schedule_id: int) -> dict[str, Any]:
         """
         删除定时通知（通用方法，HTTP和命令共用）
 
@@ -276,7 +285,7 @@ class NotificationAPI:
 
     # ==================== HTTP路由处理方法（Quart兼容） ====================
 
-    async def handle_send_notification(self, **kwargs) -> Dict[str, Any]:
+    async def handle_send_notification(self, **kwargs) -> dict[str, Any]:
         """
         HTTP接口：发送通知
         POST /api/xiuxian/notifications/send
@@ -310,14 +319,16 @@ class NotificationAPI:
             )
 
             if not result.get("success", False):
-                return jsonify({"code": -1, "message": result.get("error", "发送失败")}), 400
+                return jsonify(
+                    {"code": -1, "message": result.get("error", "发送失败")}
+                ), 400
 
             return jsonify({"code": 0, "data": result})
 
         except Exception as e:
             return jsonify({"code": -1, "message": str(e)}), 500
 
-    async def handle_get_history(self, **kwargs) -> Dict[str, Any]:
+    async def handle_get_history(self, **kwargs) -> dict[str, Any]:
         """HTTP接口：获取通知历史 GET /api/xiuxian/notifications/history"""
         try:
             page = int(request.args.get("page", 1))
@@ -329,7 +340,7 @@ class NotificationAPI:
         except Exception as e:
             return jsonify({"code": -1, "message": str(e)}), 500
 
-    async def handle_get_detail(self, notification_id=None, **kwargs) -> Dict[str, Any]:
+    async def handle_get_detail(self, notification_id=None, **kwargs) -> dict[str, Any]:
         """HTTP接口：获取通知详情 GET /api/xiuxian/notifications/{notification_id}"""
         try:
             if notification_id is None:
@@ -339,14 +350,18 @@ class NotificationAPI:
             result = await self.get_notification_detail(notification_id)
 
             if not result.get("success", False):
-                return jsonify({"code": -1, "message": result.get("error", "通知不存在")}), 404
+                return jsonify(
+                    {"code": -1, "message": result.get("error", "通知不存在")}
+                ), 404
 
             return jsonify({"code": 0, "data": result["data"]})
 
         except Exception as e:
             return jsonify({"code": -1, "message": str(e)}), 500
 
-    async def handle_delete_notification(self, notification_id=None, **kwargs) -> Dict[str, Any]:
+    async def handle_delete_notification(
+        self, notification_id=None, **kwargs
+    ) -> dict[str, Any]:
         """HTTP接口：删除通知 DELETE /api/xiuxian/notifications/{notification_id}"""
         try:
             if notification_id is None:
@@ -356,14 +371,16 @@ class NotificationAPI:
             result = await self.delete_notification(notification_id)
 
             if not result.get("success", False):
-                return jsonify({"code": -1, "message": result.get("error", "删除失败")}), 400
+                return jsonify(
+                    {"code": -1, "message": result.get("error", "删除失败")}
+                ), 400
 
             return jsonify({"code": 0, "data": result})
 
         except Exception as e:
             return jsonify({"code": -1, "message": str(e)}), 500
 
-    async def handle_get_sessions(self, **kwargs) -> Dict[str, Any]:
+    async def handle_get_sessions(self, **kwargs) -> dict[str, Any]:
         """HTTP接口：获取所有玩家会话 GET /api/xiuxian/notifications/sessions"""
         try:
             sessions = await self.notification_service.get_all_sessions()
@@ -371,7 +388,7 @@ class NotificationAPI:
         except Exception as e:
             return jsonify({"code": -1, "message": str(e)}), 500
 
-    async def handle_send_by_template(self, **kwargs) -> Dict[str, Any]:
+    async def handle_send_by_template(self, **kwargs) -> dict[str, Any]:
         """
         HTTP接口：使用模板发送通知
         POST /api/xiuxian/notifications/send-template
@@ -405,14 +422,16 @@ class NotificationAPI:
             )
 
             if not result.get("success", False):
-                return jsonify({"code": -1, "message": result.get("error", "发送失败")}), 400
+                return jsonify(
+                    {"code": -1, "message": result.get("error", "发送失败")}
+                ), 400
 
             return jsonify({"code": 0, "data": result})
 
         except Exception as e:
             return jsonify({"code": -1, "message": str(e)}), 500
 
-    async def handle_get_templates(self, **kwargs) -> Dict[str, Any]:
+    async def handle_get_templates(self, **kwargs) -> dict[str, Any]:
         """HTTP接口：获取所有通知模板 GET /api/xiuxian/notifications/templates"""
         try:
             result = await self.get_templates()
@@ -422,7 +441,7 @@ class NotificationAPI:
 
     # ==================== 定时通知HTTP接口 ====================
 
-    async def handle_create_scheduled(self, **kwargs) -> Dict[str, Any]:
+    async def handle_create_scheduled(self, **kwargs) -> dict[str, Any]:
         """
         HTTP接口：创建定时通知
         POST /api/xiuxian/notifications/scheduled
@@ -453,26 +472,32 @@ class NotificationAPI:
             )
 
             if not result.get("success", False):
-                return jsonify({"code": -1, "message": result.get("error", "创建失败")}), 400
+                return jsonify(
+                    {"code": -1, "message": result.get("error", "创建失败")}
+                ), 400
 
             return jsonify({"code": 0, "data": result["data"]})
 
         except Exception as e:
             return jsonify({"code": -1, "message": str(e)}), 500
 
-    async def handle_get_scheduled(self, **kwargs) -> Dict[str, Any]:
+    async def handle_get_scheduled(self, **kwargs) -> dict[str, Any]:
         """HTTP接口：获取定时通知列表 GET /api/xiuxian/notifications/scheduled"""
         try:
             page = int(request.args.get("page", 1))
             page_size = int(request.args.get("page_size", 20))
 
-            result = await self.get_scheduled_notifications(page=page, page_size=page_size)
+            result = await self.get_scheduled_notifications(
+                page=page, page_size=page_size
+            )
             return jsonify({"code": 0, "data": result["data"]})
 
         except Exception as e:
             return jsonify({"code": -1, "message": str(e)}), 500
 
-    async def handle_toggle_scheduled(self, schedule_id=None, **kwargs) -> Dict[str, Any]:
+    async def handle_toggle_scheduled(
+        self, schedule_id=None, **kwargs
+    ) -> dict[str, Any]:
         """
         HTTP接口：启用/禁用定时通知
         PUT /api/xiuxian/notifications/scheduled/{schedule_id}/toggle
@@ -488,14 +513,18 @@ class NotificationAPI:
             result = await self.toggle_scheduled_notification(int(schedule_id), enabled)
 
             if not result.get("success", False):
-                return jsonify({"code": -1, "message": result.get("error", "操作失败")}), 400
+                return jsonify(
+                    {"code": -1, "message": result.get("error", "操作失败")}
+                ), 400
 
             return jsonify({"code": 0, "data": result})
 
         except Exception as e:
             return jsonify({"code": -1, "message": str(e)}), 500
 
-    async def handle_delete_scheduled(self, schedule_id=None, **kwargs) -> Dict[str, Any]:
+    async def handle_delete_scheduled(
+        self, schedule_id=None, **kwargs
+    ) -> dict[str, Any]:
         """HTTP接口：删除定时通知 DELETE /api/xiuxian/notifications/scheduled/{schedule_id}"""
         try:
             if schedule_id is None:
@@ -504,7 +533,9 @@ class NotificationAPI:
             result = await self.delete_scheduled_notification(int(schedule_id))
 
             if not result.get("success", False):
-                return jsonify({"code": -1, "message": result.get("error", "删除失败")}), 400
+                return jsonify(
+                    {"code": -1, "message": result.get("error", "删除失败")}
+                ), 400
 
             return jsonify({"code": 0, "data": result})
 

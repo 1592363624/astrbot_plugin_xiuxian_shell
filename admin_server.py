@@ -3,13 +3,12 @@
 提供不经过AstrBot认证中间件的后台管理页面和API访问
 """
 
-import asyncio
-import hashlib
 import secrets
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from aiohttp import web
+
 from astrbot.api import logger
 
 
@@ -21,6 +20,7 @@ class AdminServer:
         admin_api: Any,
         checkin_api: Any,
         notification_api: Any,
+        item_effect_service: Any = None,
         host: str = "0.0.0.0",
         port: int = 0,
         password: str = "",
@@ -32,6 +32,7 @@ class AdminServer:
             admin_api: 后台管理API实例
             checkin_api: 签到API实例
             notification_api: 通知API实例
+            item_effect_service: 物品效果服务实例
             host: 监听地址
             port: 监听端口，0表示自动分配
             password: 管理后台密码
@@ -39,13 +40,14 @@ class AdminServer:
         self.admin_api = admin_api
         self.checkin_api = checkin_api
         self.notification_api = notification_api
+        self.item_effect_service = item_effect_service
         self.host = host
         self.port = port
         self.password = password or "xiuxian_admin"
-        self._app: Optional[web.Application] = None
-        self._runner: Optional[web.AppRunner] = None
-        self._site: Optional[web.TCPSite] = None
-        self._sessions: Dict[str, bool] = {}
+        self._app: web.Application | None = None
+        self._runner: web.AppRunner | None = None
+        self._site: web.TCPSite | None = None
+        self._sessions: dict[str, bool] = {}
         self._session_secret = secrets.token_hex(32)
 
     async def start(self) -> int:
@@ -85,61 +87,167 @@ class AdminServer:
         self._app.router.add_get("/api/xiuxian/stats", self._handle_stats)
         # 玩家管理
         self._app.router.add_get("/api/xiuxian/players", self._handle_players)
-        self._app.router.add_get("/api/xiuxian/players/{player_id}", self._handle_player_detail)
-        self._app.router.add_post("/api/xiuxian/players/{player_id}", self._handle_update_player)
-        self._app.router.add_post("/api/xiuxian/players/{player_id}/delete", self._handle_delete_player)
-        self._app.router.add_post("/api/xiuxian/players/{player_id}/reset", self._handle_reset_player)
-        self._app.router.add_post("/api/xiuxian/players/{player_id}/ban", self._handle_ban_player)
-        self._app.router.add_post("/api/xiuxian/players/{player_id}/unban", self._handle_unban_player)
+        self._app.router.add_get(
+            "/api/xiuxian/players/{player_id}", self._handle_player_detail
+        )
+        self._app.router.add_post(
+            "/api/xiuxian/players/{player_id}", self._handle_update_player
+        )
+        self._app.router.add_post(
+            "/api/xiuxian/players/{player_id}/delete", self._handle_delete_player
+        )
+        self._app.router.add_post(
+            "/api/xiuxian/players/{player_id}/reset", self._handle_reset_player
+        )
+        self._app.router.add_post(
+            "/api/xiuxian/players/{player_id}/ban", self._handle_ban_player
+        )
+        self._app.router.add_post(
+            "/api/xiuxian/players/{player_id}/unban", self._handle_unban_player
+        )
         # 物品管理
         self._app.router.add_get("/api/xiuxian/items", self._handle_items)
         self._app.router.add_post("/api/xiuxian/items", self._handle_create_item)
-        self._app.router.add_post("/api/xiuxian/items/{item_id}", self._handle_update_item)
-        self._app.router.add_post("/api/xiuxian/items/{item_id}/delete", self._handle_delete_item)
+        self._app.router.add_post(
+            "/api/xiuxian/items/{item_id}", self._handle_update_item
+        )
+        self._app.router.add_post(
+            "/api/xiuxian/items/{item_id}/delete", self._handle_delete_item
+        )
         # 功法管理
         self._app.router.add_get("/api/xiuxian/skills", self._handle_skills)
         self._app.router.add_post("/api/xiuxian/skills", self._handle_create_skill)
-        self._app.router.add_post("/api/xiuxian/skills/{skill_id}", self._handle_update_skill)
-        self._app.router.add_post("/api/xiuxian/skills/{skill_id}/delete", self._handle_delete_skill)
+        self._app.router.add_post(
+            "/api/xiuxian/skills/{skill_id}", self._handle_update_skill
+        )
+        self._app.router.add_post(
+            "/api/xiuxian/skills/{skill_id}/delete", self._handle_delete_skill
+        )
         # 境界管理
         self._app.router.add_get("/api/xiuxian/realms", self._handle_realms)
         self._app.router.add_post("/api/xiuxian/realms", self._handle_create_realm)
-        self._app.router.add_post("/api/xiuxian/realms/{realm_id}", self._handle_update_realm)
-        self._app.router.add_post("/api/xiuxian/realms/{realm_id}/delete", self._handle_delete_realm)
+        self._app.router.add_post(
+            "/api/xiuxian/realms/{realm_id}", self._handle_update_realm
+        )
+        self._app.router.add_post(
+            "/api/xiuxian/realms/{realm_id}/delete", self._handle_delete_realm
+        )
         # 事件管理
         self._app.router.add_get("/api/xiuxian/events", self._handle_events)
         self._app.router.add_post("/api/xiuxian/events", self._handle_create_event)
-        self._app.router.add_post("/api/xiuxian/events/{event_id}", self._handle_update_event)
-        self._app.router.add_post("/api/xiuxian/events/{event_id}/delete", self._handle_delete_event)
+        self._app.router.add_post(
+            "/api/xiuxian/events/{event_id}", self._handle_update_event
+        )
+        self._app.router.add_post(
+            "/api/xiuxian/events/{event_id}/delete", self._handle_delete_event
+        )
         # 配置管理
         self._app.router.add_get("/api/xiuxian/config", self._handle_get_config)
         self._app.router.add_post("/api/xiuxian/config", self._handle_update_config)
         # 闭关修炼
-        self._app.router.add_get("/api/xiuxian/seclusion/{player_id}/status", self._handle_seclusion_status)
-        self._app.router.add_get("/api/xiuxian/seclusion/{player_id}/records", self._handle_seclusion_records)
+        self._app.router.add_get(
+            "/api/xiuxian/seclusion/{player_id}/status", self._handle_seclusion_status
+        )
+        self._app.router.add_get(
+            "/api/xiuxian/seclusion/{player_id}/records", self._handle_seclusion_records
+        )
         # 丹毒管理
-        self._app.router.add_get("/api/xiuxian/pill/{player_id}/toxicity", self._handle_toxicity_status)
+        self._app.router.add_get(
+            "/api/xiuxian/pill/{player_id}/toxicity", self._handle_toxicity_status
+        )
         # 签到管理
-        self._app.router.add_get("/api/xiuxian/checkin/records", self._handle_checkin_records)
-        self._app.router.add_get("/api/xiuxian/checkin/ranking", self._handle_checkin_ranking)
-        self._app.router.add_get("/api/xiuxian/checkin/{player_id}/status", self._handle_checkin_status)
-        self._app.router.add_get("/api/xiuxian/checkin/{player_id}/records", self._handle_checkin_player_records)
+        self._app.router.add_get(
+            "/api/xiuxian/checkin/records", self._handle_checkin_records
+        )
+        self._app.router.add_get(
+            "/api/xiuxian/checkin/ranking", self._handle_checkin_ranking
+        )
+        self._app.router.add_get(
+            "/api/xiuxian/checkin/{player_id}/status", self._handle_checkin_status
+        )
+        self._app.router.add_get(
+            "/api/xiuxian/checkin/{player_id}/records",
+            self._handle_checkin_player_records,
+        )
         # 通知管理
-        self._app.router.add_post("/api/xiuxian/notifications/send", self._handle_notification_send)
-        self._app.router.add_get("/api/xiuxian/notifications/history", self._handle_notification_history)
-        self._app.router.add_get("/api/xiuxian/notifications/{notification_id}", self._handle_notification_detail)
-        self._app.router.add_post("/api/xiuxian/notifications/{notification_id}/delete", self._handle_notification_delete)
-        self._app.router.add_get("/api/xiuxian/notifications/sessions", self._handle_notification_sessions)
-        self._app.router.add_post("/api/xiuxian/notifications/send-template", self._handle_notification_send_template)
-        self._app.router.add_get("/api/xiuxian/notifications/templates", self._handle_notification_templates)
-        self._app.router.add_post("/api/xiuxian/notifications/scheduled", self._handle_notification_create_scheduled)
-        self._app.router.add_get("/api/xiuxian/notifications/scheduled", self._handle_notification_get_scheduled)
-        self._app.router.add_post("/api/xiuxian/notifications/scheduled/{schedule_id}/toggle", self._handle_notification_toggle_scheduled)
-        self._app.router.add_post("/api/xiuxian/notifications/scheduled/{schedule_id}/delete", self._handle_notification_delete_scheduled)
+        self._app.router.add_post(
+            "/api/xiuxian/notifications/send", self._handle_notification_send
+        )
+        self._app.router.add_get(
+            "/api/xiuxian/notifications/history", self._handle_notification_history
+        )
+        self._app.router.add_get(
+            "/api/xiuxian/notifications/{notification_id}",
+            self._handle_notification_detail,
+        )
+        self._app.router.add_post(
+            "/api/xiuxian/notifications/{notification_id}/delete",
+            self._handle_notification_delete,
+        )
+        self._app.router.add_get(
+            "/api/xiuxian/notifications/sessions", self._handle_notification_sessions
+        )
+        self._app.router.add_post(
+            "/api/xiuxian/notifications/send-template",
+            self._handle_notification_send_template,
+        )
+        self._app.router.add_get(
+            "/api/xiuxian/notifications/templates", self._handle_notification_templates
+        )
+        self._app.router.add_post(
+            "/api/xiuxian/notifications/scheduled",
+            self._handle_notification_create_scheduled,
+        )
+        self._app.router.add_get(
+            "/api/xiuxian/notifications/scheduled",
+            self._handle_notification_get_scheduled,
+        )
+        self._app.router.add_post(
+            "/api/xiuxian/notifications/scheduled/{schedule_id}/toggle",
+            self._handle_notification_toggle_scheduled,
+        )
+        self._app.router.add_post(
+            "/api/xiuxian/notifications/scheduled/{schedule_id}/delete",
+            self._handle_notification_delete_scheduled,
+        )
+        # 发言日志管理
+        self._app.router.add_get("/api/xiuxian/chat-logs", self._handle_chat_logs)
+        # 突破条件管理
+        self._app.router.add_get(
+            "/api/xiuxian/breakthrough-conditions",
+            self._handle_breakthrough_conditions_list,
+        )
+        self._app.router.add_get(
+            "/api/xiuxian/breakthrough-conditions/{condition_id}",
+            self._handle_breakthrough_condition_detail,
+        )
+        self._app.router.add_put(
+            "/api/xiuxian/breakthrough-conditions/{condition_id}",
+            self._handle_breakthrough_condition_update,
+        )
+        # 效果管理
+        self._app.router.add_get("/api/xiuxian/effects", self._handle_effects)
+        self._app.router.add_get(
+            "/api/xiuxian/effects/{effect_id}", self._handle_effect_detail
+        )
+        self._app.router.add_post("/api/xiuxian/effects", self._handle_create_effect)
+        self._app.router.add_put(
+            "/api/xiuxian/effects/{effect_id}", self._handle_update_effect
+        )
+        self._app.router.add_delete(
+            "/api/xiuxian/effects/{effect_id}", self._handle_delete_effect
+        )
+        # 提示文案管理
+        self._app.router.add_get("/api/xiuxian/prompts", self._handle_prompts)
+        self._app.router.add_put(
+            "/api/xiuxian/prompts/{prompt_key}", self._handle_update_prompt
+        )
         # 认证
         self._app.router.add_post("/api/xiuxian/auth/login", self._handle_login)
         self._app.router.add_post("/api/xiuxian/auth/logout", self._handle_logout)
-        self._app.router.add_post("/api/xiuxian/auth/change-password", self._handle_change_password)
+        self._app.router.add_post(
+            "/api/xiuxian/auth/change-password", self._handle_change_password
+        )
 
     def _check_auth(self, request: web.Request) -> bool:
         """检查请求是否已认证"""
@@ -157,7 +265,7 @@ class AdminServer:
                 logger.warning(f"Invalid token: {token[:8]}...")
         return False
 
-    def _json_response(self, data: Dict[str, Any], status: int = 200) -> web.Response:
+    def _json_response(self, data: dict[str, Any], status: int = 200) -> web.Response:
         """返回JSON响应"""
         return web.json_response(data, status=status)
 
@@ -167,7 +275,7 @@ class AdminServer:
 
     def _serialize(self, obj: Any) -> Any:
         """序列化对象，将模型对象转换为字典"""
-        if hasattr(obj, 'to_dict'):
+        if hasattr(obj, "to_dict"):
             return obj.to_dict()
         if isinstance(obj, list):
             return [self._serialize(item) for item in obj]
@@ -179,7 +287,7 @@ class AdminServer:
         """返回错误响应"""
         return self._json_response({"code": code, "message": message})
 
-    def _require_auth(self, request: web.Request) -> Optional[web.Response]:
+    def _require_auth(self, request: web.Request) -> web.Response | None:
         """检查认证，未认证返回错误响应"""
         if not self._check_auth(request):
             return self._error("未登录或登录已过期", 401)
@@ -258,23 +366,32 @@ class AdminServer:
         auth_error = self._require_auth(request)
         if auth_error:
             return auth_error
+
         player_count = await self.admin_api.player_service.db.fetch_one(
             "SELECT COUNT(*) as count FROM players"
-        )
-        realm_distribution = await self.admin_api.player_service.db.fetch_all(
-            """SELECT r.name, COUNT(p.id) as count
-            FROM players p
-            JOIN realms r ON p.realm_id = r.id
-            GROUP BY r.name"""
         )
         total_stones = await self.admin_api.player_service.db.fetch_one(
             "SELECT SUM(spirit_stone) as total FROM players"
         )
-        return self._ok({
-            "player_count": player_count["count"] if player_count else 0,
-            "realm_distribution": realm_distribution,
-            "total_spirit_stones": total_stones["total"] if total_stones else 0,
-        })
+
+        players = await self.admin_api.player_service.get_all_players(page=1, page_size=10000)
+        realm_stats = {}
+        realms_cache = {r.level: r.name for r in await self.admin_api.cultivation_service.get_all_realms()}
+
+        for player_data in players.get("players", []):
+            realm_level = player_data.get("realm_level", 1)
+            realm_name = realms_cache.get(realm_level, "未知")
+            realm_stats[realm_name] = realm_stats.get(realm_name, 0) + 1
+
+        realm_distribution = [{"name": name, "count": count} for name, count in realm_stats.items()]
+
+        return self._ok(
+            {
+                "player_count": player_count["count"] if player_count else 0,
+                "realm_distribution": realm_distribution,
+                "total_spirit_stones": total_stones["total"] if total_stones else 0,
+            }
+        )
 
     async def _handle_players(self, request: web.Request) -> web.Response:
         """获取玩家列表"""
@@ -540,7 +657,9 @@ class AdminServer:
         if auth_error:
             return auth_error
         player_id = request.match_info["player_id"]
-        status = await self.admin_api.cultivation_service.get_seclusion_status(player_id)
+        status = await self.admin_api.cultivation_service.get_seclusion_status(
+            player_id
+        )
         return self._ok(status)
 
     async def _handle_seclusion_records(self, request: web.Request) -> web.Response:
@@ -550,7 +669,9 @@ class AdminServer:
             return auth_error
         player_id = request.match_info["player_id"]
         limit = int(request.query.get("limit", 10))
-        records = await self.admin_api.cultivation_service.get_seclusion_records(player_id, limit)
+        records = await self.admin_api.cultivation_service.get_seclusion_records(
+            player_id, limit
+        )
         return self._ok(records)
 
     # ==================== 丹毒管理 ====================
@@ -573,7 +694,9 @@ class AdminServer:
             return auth_error
         page = int(request.query.get("page", 1))
         page_size = int(request.query.get("page_size", 20))
-        result = await self.checkin_api.checkin_service.get_all_checkin_records(page, page_size)
+        result = await self.checkin_api.checkin_service.get_all_checkin_records(
+            page, page_size
+        )
         return self._ok(result)
 
     async def _handle_checkin_ranking(self, request: web.Request) -> web.Response:
@@ -594,14 +717,18 @@ class AdminServer:
         status = await self.checkin_api.checkin_service.get_checkin_status(player_id)
         return self._ok(status)
 
-    async def _handle_checkin_player_records(self, request: web.Request) -> web.Response:
+    async def _handle_checkin_player_records(
+        self, request: web.Request
+    ) -> web.Response:
         """获取玩家签到记录"""
         auth_error = self._require_auth(request)
         if auth_error:
             return auth_error
         player_id = request.match_info["player_id"]
         limit = int(request.query.get("limit", 30))
-        records = await self.checkin_api.checkin_service.get_player_checkin_records(player_id, limit)
+        records = await self.checkin_api.checkin_service.get_player_checkin_records(
+            player_id, limit
+        )
         return self._ok(records)
 
     # ==================== 通知管理 ====================
@@ -637,7 +764,9 @@ class AdminServer:
             return auth_error
         page = int(request.query.get("page", 1))
         page_size = int(request.query.get("page_size", 20))
-        result = await self.notification_api.get_notification_history(page=page, page_size=page_size)
+        result = await self.notification_api.get_notification_history(
+            page=page, page_size=page_size
+        )
         return self._ok(result)
 
     async def _handle_notification_detail(self, request: web.Request) -> web.Response:
@@ -676,7 +805,9 @@ class AdminServer:
         result = await self.notification_api.get_all_player_sessions()
         return self._ok(result)
 
-    async def _handle_notification_send_template(self, request: web.Request) -> web.Response:
+    async def _handle_notification_send_template(
+        self, request: web.Request
+    ) -> web.Response:
         """使用模板发送通知"""
         auth_error = self._require_auth(request)
         if auth_error:
@@ -701,7 +832,9 @@ class AdminServer:
             return self._error(result.get("error", "发送失败"))
         return self._ok(result)
 
-    async def _handle_notification_templates(self, request: web.Request) -> web.Response:
+    async def _handle_notification_templates(
+        self, request: web.Request
+    ) -> web.Response:
         """获取所有通知模板"""
         auth_error = self._require_auth(request)
         if auth_error:
@@ -709,7 +842,9 @@ class AdminServer:
         result = await self.notification_api.get_notification_templates()
         return self._ok(result)
 
-    async def _handle_notification_create_scheduled(self, request: web.Request) -> web.Response:
+    async def _handle_notification_create_scheduled(
+        self, request: web.Request
+    ) -> web.Response:
         """创建定时通知"""
         auth_error = self._require_auth(request)
         if auth_error:
@@ -733,7 +868,9 @@ class AdminServer:
             return self._error(result.get("error", "创建失败"))
         return self._ok(result.get("data"))
 
-    async def _handle_notification_get_scheduled(self, request: web.Request) -> web.Response:
+    async def _handle_notification_get_scheduled(
+        self, request: web.Request
+    ) -> web.Response:
         """获取定时通知列表"""
         auth_error = self._require_auth(request)
         if auth_error:
@@ -741,7 +878,9 @@ class AdminServer:
         result = await self.notification_api.get_scheduled_notifications()
         return self._ok(result)
 
-    async def _handle_notification_toggle_scheduled(self, request: web.Request) -> web.Response:
+    async def _handle_notification_toggle_scheduled(
+        self, request: web.Request
+    ) -> web.Response:
         """启用/禁用定时通知"""
         auth_error = self._require_auth(request)
         if auth_error:
@@ -755,12 +894,16 @@ class AdminServer:
         except Exception:
             data = {}
         enabled = data.get("enabled", True)
-        result = await self.notification_api.toggle_scheduled_notification(schedule_id, enabled)
+        result = await self.notification_api.toggle_scheduled_notification(
+            schedule_id, enabled
+        )
         if not result.get("success", False):
             return self._error(result.get("error", "操作失败"))
         return self._ok(result)
 
-    async def _handle_notification_delete_scheduled(self, request: web.Request) -> web.Response:
+    async def _handle_notification_delete_scheduled(
+        self, request: web.Request
+    ) -> web.Response:
         """删除定时通知"""
         auth_error = self._require_auth(request)
         if auth_error:
@@ -773,3 +916,180 @@ class AdminServer:
         if not result.get("success", False):
             return self._error(result.get("error", "删除失败"))
         return self._ok(result)
+
+    # ==================== 发言日志管理 ====================
+
+    async def _handle_chat_logs(self, request: web.Request) -> web.Response:
+        """获取发言日志列表"""
+        auth_error = self._require_auth(request)
+        if auth_error:
+            return auth_error
+        page = int(request.query.get("page", 1))
+        page_size = int(request.query.get("page_size", 100))
+        sort_field = request.query.get("sort_field", "created_at")
+        sort_order = request.query.get("sort_order", "DESC")
+        keyword = request.query.get("keyword", None)
+
+        result = await self.admin_api.player_service.get_chat_logs(
+            page=page,
+            page_size=page_size,
+            sort_field=sort_field,
+            sort_order=sort_order,
+            keyword=keyword,
+        )
+        return self._ok(result)
+
+    # ==================== 突破条件管理 ====================
+
+    async def _handle_breakthrough_conditions_list(
+        self, request: web.Request
+    ) -> web.Response:
+        """获取突破条件列表"""
+        auth_error = self._require_auth(request)
+        if auth_error:
+            return auth_error
+        result = await self.admin_api.get_breakthrough_conditions()
+        return web.json_response(result)
+
+    async def _handle_breakthrough_condition_detail(
+        self, request: web.Request
+    ) -> web.Response:
+        """获取单个突破条件详情"""
+        auth_error = self._require_auth(request)
+        if auth_error:
+            return auth_error
+        condition_id = request.match_info.get("condition_id")
+        result = await self.admin_api.get_breakthrough_condition(condition_id)
+        return web.json_response(result)
+
+    async def _handle_breakthrough_condition_update(
+        self, request: web.Request
+    ) -> web.Response:
+        """更新突破条件"""
+        auth_error = self._require_auth(request)
+        if auth_error:
+            return auth_error
+        condition_id = request.match_info.get("condition_id")
+        result = await self.admin_api.update_breakthrough_condition(condition_id)
+        return web.json_response(result)
+
+    # ==================== 效果管理处理器 ====================
+
+    async def _handle_effects(self, request: web.Request) -> web.Response:
+        """获取所有效果配置"""
+        auth_error = self._require_auth(request)
+        if auth_error:
+            return auth_error
+        try:
+            effects = await self.item_effect_service.get_all_effects()
+            return self._json_response({"success": True, "data": effects})
+        except Exception as e:
+            logger.error(f"获取效果列表失败: {e}")
+            return self._json_response({"success": False, "error": str(e)}, 500)
+
+    async def _handle_effect_detail(self, request: web.Request) -> web.Response:
+        """获取单个效果配置详情"""
+        auth_error = self._require_auth(request)
+        if auth_error:
+            return auth_error
+        effect_id = request.match_info.get("effect_id")
+        try:
+            effect = await self.item_effect_service.get_effect_by_id(effect_id)
+            if effect:
+                return self._json_response({"success": True, "data": effect})
+            return self._json_response(
+                {"success": False, "error": f"效果 {effect_id} 不存在"}, 404
+            )
+        except Exception as e:
+            logger.error(f"获取效果详情失败: {e}")
+            return self._json_response({"success": False, "error": str(e)}, 500)
+
+    async def _handle_create_effect(self, request: web.Request) -> web.Response:
+        """创建新效果配置"""
+        auth_error = self._require_auth(request)
+        if auth_error:
+            return auth_error
+        try:
+            data = await request.json()
+            new_effect = await self.item_effect_service.create_effect(data)
+            return self._json_response(
+                {"success": True, "data": new_effect, "message": "效果创建成功"},
+                201,
+            )
+        except Exception as e:
+            logger.error(f"创建效果失败: {e}")
+            return self._json_response({"success": False, "error": str(e)}, 400)
+
+    async def _handle_update_effect(self, request: web.Request) -> web.Response:
+        """更新效果配置"""
+        auth_error = self._require_auth(request)
+        if auth_error:
+            return auth_error
+        effect_id = request.match_info.get("effect_id")
+        try:
+            data = await request.json()
+            updated = await self.item_effect_service.update_effect(effect_id, data)
+            if updated:
+                return self._json_response(
+                    {"success": True, "data": updated, "message": "效果更新成功"}
+                )
+            return self._json_response(
+                {"success": False, "error": f"效果 {effect_id} 不存在"}, 404
+            )
+        except Exception as e:
+            logger.error(f"更新效果失败: {e}")
+            return self._json_response({"success": False, "error": str(e)}, 400)
+
+    async def _handle_delete_effect(self, request: web.Request) -> web.Response:
+        """删除效果配置"""
+        auth_error = self._require_auth(request)
+        if auth_error:
+            return auth_error
+        effect_id = request.match_info.get("effect_id")
+        try:
+            success = await self.item_effect_service.delete_effect(effect_id)
+            if success:
+                return self._json_response(
+                    {"success": True, "message": f"效果 {effect_id} 已删除"}
+                )
+            return self._json_response(
+                {"success": False, "error": f"效果 {effect_id} 不存在"}, 404
+            )
+        except Exception as e:
+            logger.error(f"删除效果失败: {e}")
+            return self._json_response({"success": False, "error": str(e)}, 500)
+
+    # ==================== 提示文案管理处理器 ====================
+
+    async def _handle_prompts(self, request: web.Request) -> web.Response:
+        """获取所有提示文案配置"""
+        auth_error = self._require_auth(request)
+        if auth_error:
+            return auth_error
+        try:
+            prompts = await self.item_effect_service.get_all_prompts()
+            return self._json_response({"success": True, "data": prompts})
+        except Exception as e:
+            logger.error(f"获取提示文案失败: {e}")
+            return self._json_response({"success": False, "error": str(e)}, 500)
+
+    async def _handle_update_prompt(self, request: web.Request) -> web.Response:
+        """更新单条提示文案"""
+        auth_error = self._require_auth(request)
+        if auth_error:
+            return auth_error
+        prompt_key = request.match_info.get("prompt_key")
+        try:
+            data = await request.json()
+            value = data.get("value", "")
+            if not value:
+                return self._json_response(
+                    {"success": False, "error": "提示文案内容不能为空"}, 400
+                )
+            await self.item_effect_service.update_prompt(prompt_key, value)
+            return self._json_response(
+                {"success": True, "message": f"提示文案 {prompt_key} 更新成功"}
+            )
+        except Exception as e:
+            logger.error(f"更新提示文案失败: {e}")
+            return self._json_response({"success": False, "error": str(e)}, 400)

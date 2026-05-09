@@ -7,15 +7,15 @@ Revision ID: v006
 Revises: v005
 Create Date: 2026-05-08
 """
-from typing import Sequence, Union
-from alembic import op
-import sqlalchemy as sa
 
+from collections.abc import Sequence
+
+from alembic import op
 
 revision: str = "v006"
-down_revision: Union[str, Sequence[str], None] = "v005"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "v005"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -27,7 +27,9 @@ def upgrade() -> None:
         batch_op.alter_column("percep", server_default="0")
         batch_op.alter_column("luck", server_default="0")
 
-    op.execute("UPDATE players SET bone = 0, spirit = 0, intel = 0, str = 0, percep = 0, luck = 0")
+    op.execute(
+        "UPDATE players SET bone = 0, spirit = 0, intel = 0, str = 0, percep = 0, luck = 0"
+    )
 
 
 def downgrade() -> None:

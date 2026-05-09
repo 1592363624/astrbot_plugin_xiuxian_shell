@@ -2,29 +2,35 @@
 签到服务
 处理每日签到、连续签到天数计算、修为奖励发放等业务逻辑
 """
+
 import uuid
-from datetime import datetime, date, timedelta
-from typing import Optional, Dict, Any, List, TYPE_CHECKING
+from datetime import date, timedelta
+from typing import TYPE_CHECKING, Any
+
 from astrbot.api import logger
+
 from ..database import DatabaseManager
 
 if TYPE_CHECKING:
     from ..config import ConfigManager
+    from .cultivation_service import CultivationService
 
 
 class CheckinService:
     """签到服务类"""
 
-    def __init__(self, db_manager: DatabaseManager, config_manager: "ConfigManager"):
+    def __init__(self, db_manager: DatabaseManager, config_manager: "ConfigManager", cultivation_service: "CultivationService" = None):
         """
         初始化签到服务
 
         Args:
             db_manager: 数据库管理器实例
             config_manager: 配置管理器实例
+            cultivation_service: 修炼服务实例(用于获取境界信息)
         """
         self.db = db_manager
         self.config_manager = config_manager
+        self.cultivation_service = cultivation_service
 
     def _get_reward_rate(self, consecutive_days: int) -> int:
         """
@@ -61,34 +67,36 @@ class CheckinService:
         """
         # 获取玩家当前境界
         player = await self.db.fetch_one(
-            "SELECT realm_id FROM players WHERE id = ?",
-            (player_id,)
+            "SELECT realm_id FROM players WHERE id = ?", (player_id,)
         )
         if not player:
             return 0
 
         # 获取当前境界等级
-        current_realm = await self.db.fetch_one(
-            "SELECT level FROM realms WHERE id = ?",
-            (player["realm_id"],)
-        )
-        if not current_realm:
-            return 0
+        current_realm_level = 1
+        current_exp_required = 100
+        if self.cultivation_service:
+            realm = await self.cultivation_service.get_realm_by_id(player["realm_id"])
+            if realm:
+                current_realm_level = realm.level
+                current_exp_required = realm.experience_required
 
         # 获取下一境界的 experience_required（即升级所需修为）
-        next_realm = await self.db.fetch_one(
-            "SELECT experience_required FROM realms WHERE level > ? ORDER BY level ASC LIMIT 1",
-            (current_realm["level"],)
-        )
+        next_exp = 0
+        if self.cultivation_service:
+            next_realm = await self.cultivation_service.get_next_realm(current_realm_level)
+            if next_realm:
+                next_exp = next_realm.experience_required
+
         # 已达最高境界时，使用当前境界自身 experience_required 作为基准
-        base_exp = next_realm["experience_required"] if next_realm else current_realm.get("experience_required", 100)
+        base_exp = next_exp if next_exp > 0 else current_exp_required
 
         # 按百分比计算奖励，至少为1
         rate = self._get_reward_rate(consecutive_days)
         reward = max(1, int(base_exp * rate / 100))
         return reward
 
-    async def _get_last_checkin(self, player_id: str) -> Optional[Dict[str, Any]]:
+    async def _get_last_checkin(self, player_id: str) -> dict[str, Any] | None:
         """
         获取玩家最近一次签到记录
 
@@ -100,7 +108,7 @@ class CheckinService:
         """
         return await self.db.fetch_one(
             "SELECT * FROM checkin_records WHERE player_id = ? ORDER BY checkin_date DESC LIMIT 1",
-            (player_id,)
+            (player_id,),
         )
 
     async def _calc_consecutive_days(self, player_id: str) -> int:
@@ -131,7 +139,7 @@ class CheckinService:
         # 断签，重置为1
         return 1
 
-    async def checkin(self, player_id: str) -> Dict[str, Any]:
+    async def checkin(self, player_id: str) -> dict[str, Any]:
         """
         执行每日签到
 
@@ -146,7 +154,7 @@ class CheckinService:
         # 检查今天是否已签到
         existing = await self.db.fetch_one(
             "SELECT id FROM checkin_records WHERE player_id = ? AND checkin_date = ?",
-            (player_id, today_str)
+            (player_id, today_str),
         )
         if existing:
             return {
@@ -165,17 +173,19 @@ class CheckinService:
         await self.db.execute(
             """INSERT INTO checkin_records (id, player_id, checkin_date, consecutive_days, exp_reward)
             VALUES (?, ?, ?, ?, ?)""",
-            (record_id, player_id, today_str, consecutive_days, exp_reward)
+            (record_id, player_id, today_str, consecutive_days, exp_reward),
         )
 
         # 发放修为奖励
         await self.db.execute(
             "UPDATE players SET experience = experience + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (exp_reward, player_id)
+            (exp_reward, player_id),
         )
         await self.db.commit()
 
-        logger.info(f"玩家 {player_id} 签到成功，连续 {consecutive_days} 天，获得 {exp_reward} 修为")
+        logger.info(
+            f"玩家 {player_id} 签到成功，连续 {consecutive_days} 天，获得 {exp_reward} 修为"
+        )
 
         # 确定奖励等级描述
         rate = self._get_reward_rate(consecutive_days)
@@ -200,7 +210,7 @@ class CheckinService:
             ),
         }
 
-    async def get_checkin_status(self, player_id: str) -> Dict[str, Any]:
+    async def get_checkin_status(self, player_id: str) -> dict[str, Any]:
         """
         查询玩家签到状态（今日是否签到、连续天数等）
 
@@ -215,7 +225,7 @@ class CheckinService:
         # 查询今日签到记录
         today_record = await self.db.fetch_one(
             "SELECT * FROM checkin_records WHERE player_id = ? AND checkin_date = ?",
-            (player_id, today_str)
+            (player_id, today_str),
         )
 
         # 查询最近一条记录获取连续天数
@@ -241,7 +251,7 @@ class CheckinService:
 
     async def get_player_checkin_records(
         self, player_id: str, limit: int = 30
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         获取玩家近期签到记录
 
@@ -254,11 +264,11 @@ class CheckinService:
         """
         rows = await self.db.fetch_all(
             "SELECT * FROM checkin_records WHERE player_id = ? ORDER BY checkin_date DESC LIMIT ?",
-            (player_id, limit)
+            (player_id, limit),
         )
         return rows
 
-    async def get_checkin_ranking(self, limit: int = 10) -> List[Dict[str, Any]]:
+    async def get_checkin_ranking(self, limit: int = 10) -> list[dict[str, Any]]:
         """
         获取签到排行（按连续签到天数排序）
 
@@ -275,13 +285,13 @@ class CheckinService:
             WHERE cr.checkin_date = (SELECT MAX(checkin_date) FROM checkin_records WHERE player_id = cr.player_id)
             ORDER BY cr.consecutive_days DESC
             LIMIT ?""",
-            (limit,)
+            (limit,),
         )
         return rows
 
     async def get_all_checkin_records(
         self, page: int = 1, page_size: int = 20
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         获取所有签到记录（分页，后台管理用）
 
@@ -293,7 +303,9 @@ class CheckinService:
             Dict[str, Any]: 包含记录列表和分页信息
         """
         offset = (page - 1) * page_size
-        count_result = await self.db.fetch_one("SELECT COUNT(*) as total FROM checkin_records")
+        count_result = await self.db.fetch_one(
+            "SELECT COUNT(*) as total FROM checkin_records"
+        )
         total = count_result["total"] if count_result else 0
 
         rows = await self.db.fetch_all(
@@ -302,7 +314,7 @@ class CheckinService:
             JOIN players p ON cr.player_id = p.id
             ORDER BY cr.created_at DESC
             LIMIT ? OFFSET ?""",
-            (page_size, offset)
+            (page_size, offset),
         )
 
         return {

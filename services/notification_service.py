@@ -4,7 +4,7 @@
 """
 
 import json
-from typing import List, Dict, Any, Optional, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from astrbot.api import logger
 from astrbot.core.message.components import Plain
@@ -13,9 +13,10 @@ from astrbot.core.message.message_event_result import MessageChain
 from ..database import DatabaseManager
 
 if TYPE_CHECKING:
+    from astrbot.api.star import Context
+
     from ..config import ConfigManager
     from .player_service import PlayerService
-    from astrbot.api.star import Context
 
 
 class NotificationService:
@@ -77,7 +78,7 @@ class NotificationService:
             )
         await self.db.commit()
 
-    async def get_player_session(self, user_id: str) -> Optional[Dict[str, Any]]:
+    async def get_player_session(self, user_id: str) -> dict[str, Any] | None:
         """
         获取玩家会话信息
 
@@ -92,7 +93,7 @@ class NotificationService:
             (user_id,),
         )
 
-    async def get_all_sessions(self) -> List[Dict[str, Any]]:
+    async def get_all_sessions(self) -> list[dict[str, Any]]:
         """
         获取所有已记录的玩家会话
 
@@ -110,9 +111,9 @@ class NotificationService:
         title: str,
         content: str,
         target_type: str = "all",
-        target_ids: Optional[List[str]] = None,
+        target_ids: list[str] | None = None,
         sender_id: str = "system",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         创建通知记录（不立即发送）
 
@@ -150,9 +151,9 @@ class NotificationService:
         title: str,
         content: str,
         target_type: str = "all",
-        target_ids: Optional[List[str]] = None,
+        target_ids: list[str] | None = None,
         sender_id: str = "system",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         发送通知：创建记录并推送给目标玩家
 
@@ -218,8 +219,8 @@ class NotificationService:
     async def _resolve_targets(
         self,
         target_type: str,
-        target_ids: Optional[List[str]],
-    ) -> Optional[List[str]]:
+        target_ids: list[str] | None,
+    ) -> list[str] | None:
         """
         根据目标类型解析出目标用户ID列表
 
@@ -251,10 +252,10 @@ class NotificationService:
 
     async def _push_to_targets(
         self,
-        target_user_ids: List[str],
+        target_user_ids: list[str],
         title: str,
         content: str,
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         """
         向目标用户推送消息
 
@@ -295,7 +296,7 @@ class NotificationService:
 
     async def get_notification_history(
         self, page: int = 1, page_size: int = 20
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         获取通知历史（分页）
 
@@ -324,7 +325,7 @@ class NotificationService:
             "page_size": page_size,
         }
 
-    async def get_notification_by_id(self, notification_id: int) -> Optional[Dict]:
+    async def get_notification_by_id(self, notification_id: int) -> dict | None:
         """
         根据ID获取通知详情
 
@@ -358,7 +359,9 @@ class NotificationService:
 
     # ==================== 通知模板 ====================
 
-    def render_template(self, template_id: str, variables: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+    def render_template(
+        self, template_id: str, variables: dict[str, Any]
+    ) -> tuple[str | None, str | None]:
         """
         渲染通知模板，用变量替换模板中的占位符
 
@@ -386,7 +389,7 @@ class NotificationService:
                 return title, content
         return None, None
 
-    def get_all_templates(self) -> List[Dict[str, Any]]:
+    def get_all_templates(self) -> list[dict[str, Any]]:
         """
         获取所有通知模板
 
@@ -398,11 +401,11 @@ class NotificationService:
     async def send_notification_by_template(
         self,
         template_id: str,
-        variables: Dict[str, Any],
+        variables: dict[str, Any],
         target_type: str = "all",
-        target_ids: Optional[List[str]] = None,
+        target_ids: list[str] | None = None,
         sender_id: str = "system",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         使用模板发送通知
 
@@ -436,11 +439,11 @@ class NotificationService:
         content: str,
         cron_expression: str,
         target_type: str = "all",
-        target_ids: Optional[List[str]] = None,
-        template_id: Optional[str] = None,
-        template_variables: Optional[Dict[str, Any]] = None,
+        target_ids: list[str] | None = None,
+        template_id: str | None = None,
+        template_variables: dict[str, Any] | None = None,
         created_by: str = "system",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         创建定时通知
 
@@ -482,7 +485,7 @@ class NotificationService:
 
     async def get_scheduled_notifications(
         self, page: int = 1, page_size: int = 20
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         获取定时通知列表（分页）
 
@@ -513,7 +516,7 @@ class NotificationService:
             "page_size": page_size,
         }
 
-    async def get_scheduled_notification_by_id(self, schedule_id: int) -> Optional[Dict]:
+    async def get_scheduled_notification_by_id(self, schedule_id: int) -> dict | None:
         """
         根据ID获取定时通知
 
@@ -528,7 +531,9 @@ class NotificationService:
             (schedule_id,),
         )
 
-    async def toggle_scheduled_notification(self, schedule_id: int, enabled: bool) -> bool:
+    async def toggle_scheduled_notification(
+        self, schedule_id: int, enabled: bool
+    ) -> bool:
         """
         启用/禁用定时通知
 
@@ -548,7 +553,7 @@ class NotificationService:
 
     async def update_scheduled_notification(
         self, schedule_id: int, **kwargs
-    ) -> Optional[Dict]:
+    ) -> dict | None:
         """
         更新定时通知
 
@@ -560,8 +565,13 @@ class NotificationService:
             更新后的记录字典或None
         """
         allowed_fields = {
-            "title", "content", "target_type", "target_ids",
-            "template_id", "template_variables", "cron_expression",
+            "title",
+            "content",
+            "target_type",
+            "target_ids",
+            "template_id",
+            "template_variables",
+            "cron_expression",
         }
         updates = {}
         for field in allowed_fields:
@@ -602,7 +612,7 @@ class NotificationService:
         await self.db.commit()
         return cursor.rowcount > 0
 
-    async def get_due_scheduled_notifications(self) -> List[Dict[str, Any]]:
+    async def get_due_scheduled_notifications(self) -> list[dict[str, Any]]:
         """
         获取当前时间应该执行的定时通知
 
@@ -626,7 +636,11 @@ class NotificationService:
         for record in all_enabled:
             if self._cron_matches(
                 record["cron_expression"],
-                current_min, current_hour, current_day, current_month, current_weekday,
+                current_min,
+                current_hour,
+                current_day,
+                current_month,
+                current_weekday,
             ):
                 last_run = record.get("last_run_at")
                 if last_run:
@@ -712,7 +726,7 @@ class NotificationService:
                     return True
         return False
 
-    async def execute_scheduled_notification(self, schedule_id: int) -> Dict[str, Any]:
+    async def execute_scheduled_notification(self, schedule_id: int) -> dict[str, Any]:
         """
         执行定时通知
 
@@ -736,7 +750,9 @@ class NotificationService:
                     variables = json.loads(record["template_variables"])
                 except (json.JSONDecodeError, TypeError):
                     pass
-            tpl_title, tpl_content = self.render_template(record["template_id"], variables)
+            tpl_title, tpl_content = self.render_template(
+                record["template_id"], variables
+            )
             if tpl_title is not None:
                 title = tpl_title
                 content = tpl_content

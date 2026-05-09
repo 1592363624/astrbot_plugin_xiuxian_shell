@@ -3,12 +3,14 @@ API接口模块
 提供前后端共享的API接口，用于数据查询和操作
 """
 
-from .player_api import PlayerAPI
-from .item_api import ItemAPI
-from .cultivation_api import CultivationAPI
 from .admin_api import AdminAPI
 from .checkin_api import CheckinAPI
+from .cultivation_api import CultivationAPI
+from .deep_seclusion_api import DeepSeclusionAPI
+from .item_api import ItemAPI
+from .market_api import MarketAPI
 from .notification_api import NotificationAPI
+from .player_api import PlayerAPI
 
 __all__ = [
     "PlayerAPI",
@@ -17,4 +19,6 @@ __all__ = [
     "AdminAPI",
     "CheckinAPI",
     "NotificationAPI",
+    "DeepSeclusionAPI",
+    "MarketAPI",
 ]

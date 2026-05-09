@@ -1,0 +1,90 @@
+[
+  {
+    "id": "event_001",
+    "name": "灵草奇遇",
+    "description": "你在山间发现了一株灵草",
+    "event_type": "explore",
+    "trigger_condition": "explore",
+    "reward_type": "item",
+    "reward_value": "item_007",
+    "probability": 0.3,
+    "is_active": true
+  },
+  {
+    "id": "event_002",
+    "name": "妖兽袭击",
+    "description": "一只妖兽突然出现",
+    "event_type": "combat",
+    "trigger_condition": "explore",
+    "reward_type": "spirit_stone",
+    "reward_value": 50,
+    "probability": 0.2,
+    "is_active": true
+  },
+  {
+    "id": "event_003",
+    "name": "顿悟",
+    "description": "灵光一闪，你对修炼有了新的领悟",
+    "event_type": "cultivation",
+    "trigger_condition": "cultivate",
+    "reward_type": "experience",
+    "reward_value": 100,
+    "probability": 0.15,
+    "is_active": true
+  },
+  {
+    "id": "event_004",
+    "name": "奇遇：前辈遗物",
+    "description": "你发现了一位前辈的洞府遗迹",
+    "event_type": "explore",
+    "trigger_condition": "seclusion",
+    "reward_type": "item",
+    "reward_value": "item_008",
+    "probability": 0.1,
+    "is_active": true
+  },
+  {
+    "id": "event_005",
+    "name": "天降横财",
+    "description": "天上掉下了一块灵石",
+    "event_type": "random",
+    "trigger_condition": "random",
+    "reward_type": "spirit_stone",
+    "reward_value": 200,
+    "probability": 0.05,
+    "is_active": true
+  },
+  {
+    "id": "event_006",
+    "name": "福缘深厚",
+    "description": "你感觉今日运气极佳",
+    "event_type": "random",
+    "trigger_condition": "random",
+    "reward_type": "experience",
+    "reward_value": 500,
+    "probability": 0.08,
+    "is_active": true
+  },
+  {
+    "id": "event_007",
+    "name": "闭关奇遇：灵气潮汐",
+    "description": "闭关时遭遇灵气潮汐",
+    "event_type": "cultivation",
+    "trigger_condition": "seclusion",
+    "reward_type": "experience",
+    "reward_value": 1000,
+    "probability": 0.12,
+    "is_active": true
+  },
+  {
+    "id": "event_008",
+    "name": "探险发现",
+    "description": "在山洞深处发现了一块蕴含灵气的矿石",
+    "event_type": "explore",
+    "trigger_condition": "explore",
+    "reward_type": "spirit_stone",
+    "reward_value": 150,
+    "probability": 0.25,
+    "is_active": true
+  }
+]
