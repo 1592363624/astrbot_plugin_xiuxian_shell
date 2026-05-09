@@ -8,6 +8,7 @@ from .checkin_api import CheckinAPI
 from .cultivation_api import CultivationAPI
 from .deep_seclusion_api import DeepSeclusionAPI
 from .item_api import ItemAPI
+from .market_api import MarketAPI
 from .notification_api import NotificationAPI
 from .player_api import PlayerAPI
 
@@ -19,4 +20,5 @@ __all__ = [
     "CheckinAPI",
     "NotificationAPI",
     "DeepSeclusionAPI",
+    "MarketAPI",
 ]

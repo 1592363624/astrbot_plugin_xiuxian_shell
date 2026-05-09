@@ -15,6 +15,7 @@ from .api import (
     CultivationAPI,
     DeepSeclusionAPI,
     ItemAPI,
+    MarketAPI,
     NotificationAPI,
     PlayerAPI,
 )
@@ -28,6 +29,7 @@ from .services import (
     DeepSeclusionService,
     EventService,
     InventoryService,
+    MarketService,
     NotificationService,
     PlayerService,
 )
@@ -66,6 +68,8 @@ class XiuxianPlugin(Star):
         self.breakthrough_service = BreakthroughService(
             self.db_manager, self.config_manager
         )
+        # 初始化万宝楼服务
+        self.market_service = MarketService(self.db_manager, self.config_manager)
         # 初始化API层
         self.player_api = PlayerAPI(self.player_service, self.deep_seclusion_service)
         self.item_api = ItemAPI(self.inventory_service, self.player_service)
@@ -86,6 +90,7 @@ class XiuxianPlugin(Star):
             self.config_manager,
             self.breakthrough_service,
         )
+        self.market_api = MarketAPI(self.market_service, self.player_service)
         # 初始化独立管理服务器
         admin_password = self.config_manager.get("admin_password", "xiuxian_admin")
         admin_port = self.config_manager.get("admin_port", 6186)
@@ -592,9 +597,126 @@ class XiuxianPlugin(Star):
 发送通知 <标题> | <内容> | <用户ID> - 发送通知给指定玩家(管理员)
 通知历史 - 查看通知历史记录(管理员)
 定时通知 列表/创建/开启/关闭/删除 - 管理定时通知(管理员)
+万宝楼 - 查看市场商品列表
+万宝楼 <页数> - 查看指定页商品
+万宝楼 搜索 <物品名> - 搜索商品
+万宝楼 筛选 <类型> - 按类型筛选(丹药/法宝/材料/图纸/种子)
+上架 <物品名>*<数量> 换 <所需物品1>*<数量1> ... - 上架物品到市场
+购买 <挂单ID>*<数量> - 购买商品
+我的货摊 - 查看我的出售商品
+下架 <挂单ID> - 下架商品
 修仙帮助 - 显示本帮助
         """
         yield event.plain_result(help_text.strip())
+
+    # ==================== 万宝楼命令区域 ====================
+
+    @filter.command("万宝楼")
+    async def market(self, event: AstrMessageEvent):
+        """浏览万宝楼市场"""
+        user_id = event.get_sender_id()
+        ban_message = await self._check_player_banned(user_id)
+        if ban_message:
+            yield event.plain_result(ban_message)
+            return
+
+        message = event.get_message_str().replace("万宝楼", "").strip()
+
+        if not message:
+            result = await self.market_api.browse_market(user_id, page=1)
+            yield event.plain_result(result)
+            return
+
+        parts = message.split(None, 1)
+        sub_cmd = parts[0] if parts else ""
+        arg = parts[1] if len(parts) > 1 else ""
+
+        if sub_cmd == "搜索" and arg:
+            result = await self.market_api.browse_market(
+                user_id, page=1, search_keyword=arg
+            )
+            yield event.plain_result(result)
+        elif sub_cmd == "筛选" and arg:
+            result = await self.market_api.browse_market(
+                user_id, page=1, item_type=arg
+            )
+            yield event.plain_result(result)
+        elif sub_cmd.isdigit():
+            page = int(sub_cmd)
+            result = await self.market_api.browse_market(user_id, page=page)
+            yield event.plain_result(result)
+        else:
+            result = await self.market_api.browse_market(user_id, page=1)
+            yield event.plain_result(result)
+
+    @filter.command("上架")
+    async def list_item(self, event: AstrMessageEvent):
+        """上架物品到万宝楼"""
+        user_id = event.get_sender_id()
+        ban_message = await self._check_player_banned(user_id)
+        if ban_message:
+            yield event.plain_result(ban_message)
+            return
+
+        message = event.get_message_str().replace("上架", "").strip()
+        result = await self.market_api.create_listing(user_id, f"上架 {message}")
+        yield event.plain_result(result)
+
+    @filter.command("购买")
+    async def purchase_item(self, event: AstrMessageEvent):
+        """购买万宝楼商品"""
+        user_id = event.get_sender_id()
+        ban_message = await self._check_player_banned(user_id)
+        if ban_message:
+            yield event.plain_result(ban_message)
+            return
+
+        message = event.get_message_str().replace("购买", "").strip()
+
+        if not message:
+            yield event.plain_result(
+                "用法：购买 <挂单ID> 或 购买 <挂单ID>*<数量>\n"
+                "示例：购买 ABC123\n"
+                "示例：购买 ABC123*5"
+            )
+            return
+
+        parts = message.rsplit("*", 1)
+        listing_id = parts[0].strip()
+        quantity = int(parts[1]) if len(parts) > 1 and parts[1].strip().isdigit() else None
+
+        result = await self.market_api.purchase(user_id, listing_id, quantity)
+        yield event.plain_result(result)
+
+    @filter.command("我的货摊")
+    async def my_stalls(self, event: AstrMessageEvent):
+        """查看我的货摊"""
+        user_id = event.get_sender_id()
+        ban_message = await self._check_player_banned(user_id)
+        if ban_message:
+            yield event.plain_result(ban_message)
+            return
+
+        result = await self.market_api.get_my_stalls(user_id)
+        yield event.plain_result(result)
+
+    @filter.command("下架")
+    async def cancel_listing(self, event: AstrMessageEvent):
+        """下架万宝楼商品"""
+        user_id = event.get_sender_id()
+        ban_message = await self._check_player_banned(user_id)
+        if ban_message:
+            yield event.plain_result(ban_message)
+            return
+
+        message = event.get_message_str().replace("下架", "").strip()
+
+        if not message:
+            yield event.plain_result("用法：下架 <挂单ID>\n示例：下架 ABC123")
+            return
+
+        result = await self.market_api.cancel_listing(user_id, message)
+        yield event.plain_result(result)
 
     # ==================== 通知命令区域（管理员） ====================
 
