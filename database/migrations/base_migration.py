@@ -2,7 +2,9 @@
 迁移基类
 所有迁移脚本都需要继承此基类
 """
+
 from abc import ABC, abstractmethod
+
 from ..db_manager import DatabaseManager
 
 
@@ -15,7 +17,7 @@ class BaseMigration(ABC):
     def __init__(self, db_manager: DatabaseManager):
         """
         初始化迁移
-        
+
         Args:
             db_manager: 数据库管理器实例
         """

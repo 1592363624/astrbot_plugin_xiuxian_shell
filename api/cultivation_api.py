@@ -2,15 +2,16 @@
 修炼API
 提供闭关修炼、境界突破等接口
 """
-from typing import Dict, Any
 
-from ..services import PlayerService, CultivationService
+from ..services import CultivationService, PlayerService
 
 
 class CultivationAPI:
     """修炼API类"""
 
-    def __init__(self, cultivation_service: CultivationService, player_service: PlayerService):
+    def __init__(
+        self, cultivation_service: CultivationService, player_service: PlayerService
+    ):
         """
         初始化修炼API
 

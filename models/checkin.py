@@ -2,9 +2,9 @@
 签到数据模型
 定义签到记录相关的数据结构
 """
+
 from dataclasses import dataclass
-from datetime import datetime, date
-from typing import Optional
+from datetime import datetime
 
 
 @dataclass
@@ -26,7 +26,7 @@ class CheckinRecord:
     checkin_date: str
     consecutive_days: int = 1
     exp_reward: int = 0
-    created_at: Optional[datetime] = None
+    created_at: datetime | None = None
 
     def to_dict(self) -> dict:
         """转换为字典"""
@@ -48,5 +48,7 @@ class CheckinRecord:
             checkin_date=data.get("checkin_date"),
             consecutive_days=data.get("consecutive_days", 1),
             exp_reward=data.get("exp_reward", 0),
-            created_at=datetime.fromisoformat(data["created_at"]) if data.get("created_at") else None,
+            created_at=datetime.fromisoformat(data["created_at"])
+            if data.get("created_at")
+            else None,
         )

@@ -2,6 +2,7 @@
 Alembic 迁移环境配置
 用于 SQLite 数据库的版本迁移管理
 """
+
 from logging.config import fileConfig
 
 from alembic import context

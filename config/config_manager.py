@@ -2,9 +2,11 @@
 配置管理器
 负责插件配置的加载、保存和管理
 """
+
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
+
 from astrbot.api import logger
 from astrbot.api.star import Context
 from astrbot.core.star import StarTools
@@ -27,8 +29,7 @@ class ConfigManager:
             "three_day_reward_rate": 2,
             "seven_day_reward_rate": 3,
         },
-        "player": {
-        },
+        "player": {},
         "realms": [
             {"id": "realm_001", "name": "练气期", "level": 1, "exp_required": 100},
             {"id": "realm_002", "name": "筑基期", "level": 2, "exp_required": 500},
@@ -160,7 +161,7 @@ class ConfigManager:
         ],
     }
 
-    def __init__(self, context: Context, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, context: Context, config: dict[str, Any] | None = None):
         """
         初始化配置管理器
 
@@ -170,8 +171,10 @@ class ConfigManager:
         """
         self.context = context
         self.plugin_name = "astrbot_plugin_xiuxian_shell"
-        self._config: Dict[str, Any] = {}
-        self._config_file = Path(StarTools.get_data_dir(self.plugin_name)) / "config.json"
+        self._config: dict[str, Any] = {}
+        self._config_file = (
+            Path(StarTools.get_data_dir(self.plugin_name)) / "config.json"
+        )
         self._load_config(config)
 
     def _deep_copy(self, obj: Any) -> Any:
@@ -183,7 +186,7 @@ class ConfigManager:
         else:
             return obj
 
-    def _load_config(self, external_config: Optional[Dict[str, Any]] = None):
+    def _load_config(self, external_config: dict[str, Any] | None = None):
         """
         加载配置
 
@@ -195,7 +198,7 @@ class ConfigManager:
         # 从文件加载持久化配置
         if self._config_file.exists():
             try:
-                with open(self._config_file, "r", encoding="utf-8") as f:
+                with open(self._config_file, encoding="utf-8") as f:
                     file_config = json.load(f)
                 self._merge_config(self._config, file_config)
                 logger.info(f"已从文件加载配置: {self._config_file}")
@@ -216,10 +219,10 @@ class ConfigManager:
         except Exception as e:
             logger.error(f"保存配置文件失败: {e}")
 
-    def _merge_config(self, base: Dict[str, Any], override: Dict[str, Any]):
+    def _merge_config(self, base: dict[str, Any], override: dict[str, Any]):
         """
         深度合并配置
-        
+
         Args:
             base: 基础配置
             override: 覆盖配置
@@ -233,11 +236,11 @@ class ConfigManager:
     def get(self, key: str, default: Any = None) -> Any:
         """
         获取配置项
-        
+
         Args:
             key: 配置键，支持点号分隔的路径
             default: 默认值
-            
+
         Returns:
             Any: 配置值
         """
@@ -272,16 +275,14 @@ class ConfigManager:
     def get_db_path(self) -> str:
         """
         获取数据库路径
-        
+
         Returns:
             str: 数据库文件完整路径
         """
         db_name = self.get("database.name", "xiuxian.db")
-        return str(
-            Path(StarTools.get_data_dir(self.plugin_name)) / db_name
-        )
+        return str(Path(StarTools.get_data_dir(self.plugin_name)) / db_name)
 
-    def get_all(self) -> Dict[str, Any]:
+    def get_all(self) -> dict[str, Any]:
         """
         获取所有有效配置
 
@@ -298,12 +299,14 @@ class ConfigManager:
                     result[section_key] = {}
                     for field_key in section_value.keys():
                         if field_key in self._config[section_key]:
-                            result[section_key][field_key] = self._config[section_key][field_key]
+                            result[section_key][field_key] = self._config[section_key][
+                                field_key
+                            ]
                 else:
                     result[section_key] = self._config[section_key]
         return result
 
-    def update(self, config: Dict[str, Any]):
+    def update(self, config: dict[str, Any]):
         """
         更新配置并持久化到文件
 

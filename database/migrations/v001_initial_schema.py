@@ -2,6 +2,7 @@
 初始数据库结构迁移
 创建游戏核心表结构
 """
+
 from .base_migration import BaseMigration
 
 
@@ -30,7 +31,7 @@ class V001InitialSchema(BaseMigration):
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        
+
         # 物品表
         await self.db.execute("""
             CREATE TABLE IF NOT EXISTS items (
@@ -46,7 +47,7 @@ class V001InitialSchema(BaseMigration):
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        
+
         # 玩家背包表
         await self.db.execute("""
             CREATE TABLE IF NOT EXISTS player_inventory (
@@ -61,7 +62,7 @@ class V001InitialSchema(BaseMigration):
                 UNIQUE(player_id, item_id)
             )
         """)
-        
+
         # 功法表
         await self.db.execute("""
             CREATE TABLE IF NOT EXISTS skills (
@@ -76,7 +77,7 @@ class V001InitialSchema(BaseMigration):
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        
+
         # 玩家功法表
         await self.db.execute("""
             CREATE TABLE IF NOT EXISTS player_skills (
@@ -91,7 +92,7 @@ class V001InitialSchema(BaseMigration):
                 UNIQUE(player_id, skill_id)
             )
         """)
-        
+
         # 境界表
         await self.db.execute("""
             CREATE TABLE IF NOT EXISTS realms (
@@ -106,7 +107,7 @@ class V001InitialSchema(BaseMigration):
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        
+
         # 游戏事件表
         await self.db.execute("""
             CREATE TABLE IF NOT EXISTS game_events (
@@ -122,7 +123,7 @@ class V001InitialSchema(BaseMigration):
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        
+
         # 玩家事件记录表
         await self.db.execute("""
             CREATE TABLE IF NOT EXISTS player_events (
@@ -134,7 +135,7 @@ class V001InitialSchema(BaseMigration):
                 FOREIGN KEY (event_id) REFERENCES game_events(id)
             )
         """)
-        
+
         await self.db.commit()
 
     async def down(self):

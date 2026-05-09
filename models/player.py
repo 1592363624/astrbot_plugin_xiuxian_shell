@@ -14,9 +14,9 @@
 注意：Python字段名 str_ 对应数据库列名 str 和API键名 str，
 避免与Python内置类型 str 冲突
 """
+
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 
 
 @dataclass
@@ -55,8 +55,8 @@ class Player:
     health: int = 100
     mp: int = 50
     stamina: int = 50
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     def to_dict(self) -> dict:
         """转换为字典（仅包含数据库持久化字段）"""
@@ -99,6 +99,10 @@ class Player:
             health=data.get("health", 100),
             mp=data.get("mp", 50),
             stamina=data.get("stamina", 50),
-            created_at=datetime.fromisoformat(data["created_at"]) if data.get("created_at") else None,
-            updated_at=datetime.fromisoformat(data["updated_at"]) if data.get("updated_at") else None,
+            created_at=datetime.fromisoformat(data["created_at"])
+            if data.get("created_at")
+            else None,
+            updated_at=datetime.fromisoformat(data["updated_at"])
+            if data.get("updated_at")
+            else None,
         )
