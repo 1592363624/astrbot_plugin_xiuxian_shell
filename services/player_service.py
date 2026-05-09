@@ -26,7 +26,6 @@ class PlayerService:
         self.db = db_manager
         self.config_manager = config_manager
         self._register_timestamps: dict[str, float] = {}
-        self._registered_players_cache: dict[str, dict[str, Any]] = {}
         # 被动增长修为冷却缓存 {user_id: timestamp}
         self._passive_exp_cooldowns: dict[str, float] = {}
         # 被动增长修为每日累计 {user_id: date_str}
@@ -58,19 +57,25 @@ class PlayerService:
         return None
 
     async def load_all_players_to_cache(self) -> int:
+        """
+        加载所有玩家到内存（已废弃，保留方法名兼容旧调用）
+
+        原用于缓存玩家数据，现改为仅统计玩家数量并记录日志。
+        玩家数据改为实时查询数据库，避免缓存不一致问题。
+
+        Returns:
+            int: 玩家总数
+        """
         try:
             rows = await self.db.fetch_all(
                 "SELECT id, user_id, username, realm_id, experience, spirit_stone, "
                 "bone, spirit, intel, str, percep, luck, "
                 "health, mp, stamina FROM players"
             )
-            self._registered_players_cache.clear()
-            for row in rows:
-                self._registered_players_cache[row["user_id"]] = row
-            logger.info(f"已加载 {len(rows)} 个玩家到内存缓存")
+            logger.info(f"已加载 {len(rows)} 个玩家信息")
             return len(rows)
         except Exception as e:
-            logger.error(f"加载玩家缓存失败: {e}")
+            logger.error(f"加载玩家信息失败: {e}")
             return 0
 
     async def _create_player_internal(self, user_id: str, username: str) -> Player:
@@ -116,7 +121,6 @@ class PlayerService:
         player = await self._create_player_internal(user_id, username)
         if player:
             player_dict = player.to_dict()
-            self._registered_players_cache[user_id] = player_dict
             logger.info(f"自动注册新玩家: {username} ({user_id})")
             return player_dict
 
@@ -125,9 +129,18 @@ class PlayerService:
     async def check_player_registered(
         self, user_id: str
     ) -> tuple[dict[str, Any] | None, str | None]:
-        if user_id in self._registered_players_cache:
-            return self._registered_players_cache[user_id], None
+        """
+        检查玩家是否已注册
 
+        直接从数据库查询玩家信息，不使用缓存，
+        确保每次获取的都是最新数据，避免缓存不一致问题。
+
+        Args:
+            user_id: 用户ID
+
+        Returns:
+            tuple[dict|None, str|None]: (玩家数据, 错误信息)
+        """
         player = await self.db.fetch_one(
             "SELECT id, user_id, username, realm_id, experience, spirit_stone, "
             "bone, spirit, intel, str, percep, luck, "
@@ -138,7 +151,6 @@ class PlayerService:
         if not player:
             return None, "你还没有修仙角色，系统将自动为你创建..."
 
-        self._registered_players_cache[user_id] = player
         return player, None
 
     async def create_player(self, user_id: str, username: str) -> Player:
@@ -292,10 +304,6 @@ class PlayerService:
 
             await self.db.commit()
 
-            # 清理缓存
-            if user_id and user_id in self._registered_players_cache:
-                del self._registered_players_cache[user_id]
-
             logger.info(f"玩家 {player_id} 及其所有关联数据已被彻底删除")
             return cursor.rowcount > 0
         except Exception as e:
@@ -386,10 +394,6 @@ class PlayerService:
             )
             await self.db.commit()
 
-            # 更新缓存
-            if user_id and user_id in self._registered_players_cache:
-                del self._registered_players_cache[user_id]
-
             logger.info(f"玩家 {player_id} 数据已重置")
             return await self.get_player_by_id(player_id)
         except Exception as e:
@@ -426,10 +430,6 @@ class PlayerService:
                 (ban_reason, player_id),
             )
             await self.db.commit()
-
-            # 清理缓存
-            if user_id and user_id in self._registered_players_cache:
-                del self._registered_players_cache[user_id]
 
             reason_text = f"，理由：{ban_reason}" if ban_reason else ""
             logger.info(f"玩家 {player_id} 已被软删除（封禁）{reason_text}")
@@ -563,9 +563,6 @@ class PlayerService:
         await self.db.execute(sql, (new_username, user_id))
         await self.db.commit()
 
-        if user_id in self._registered_players_cache:
-            self._registered_players_cache[user_id]["username"] = new_username
-
         logger.info(f"玩家 {user_id} 修改道号: {player.username} -> {new_username}")
         return new_username, None
 
@@ -673,13 +670,6 @@ class PlayerService:
             (new_exp, overflow, player_id),
         )
         await self.db.commit()
-
-        # 更新缓存
-        if user_id in self._registered_players_cache:
-            self._registered_players_cache[user_id]["experience"] = new_exp
-            self._registered_players_cache[user_id]["temp_experience"] = (
-                temp_exp + overflow
-            )
 
         # 记录发言日志
         log_id = str(uuid.uuid4())

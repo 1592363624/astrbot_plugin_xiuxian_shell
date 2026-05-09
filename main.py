@@ -359,7 +359,7 @@ class XiuxianPlugin(Star):
         result = await self.player_api.change_username(user_id, new_username)
         yield event.plain_result(result)
 
-    @filter.command("修仙签到")
+    @filter.command("签到")
     async def checkin(self, event: AstrMessageEvent):
         """每日签到获取修为奖励"""
         user_id = event.get_sender_id()
@@ -496,7 +496,7 @@ class XiuxianPlugin(Star):
             elif category == "wealth":
                 stones = item["spirit_stone"]
                 lines.append(f"第{rank}名：{username}（{realm}）- 灵石{stones}枚")
-
+        lines.append("相关指令：排行榜 境界 / 排行榜 发言 / 排行榜 财富")
         yield event.plain_result("\n".join(lines))
 
     @filter.command("突破")

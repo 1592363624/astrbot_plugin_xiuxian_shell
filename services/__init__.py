@@ -3,6 +3,7 @@
 处理游戏核心逻辑，包括修炼、战斗、探索、任务等
 """
 
+from .breakthrough_service import BreakthroughService
 from .checkin_service import CheckinService
 from .combat_service import CombatService
 from .cultivation_service import CultivationService
@@ -21,4 +22,5 @@ __all__ = [
     "CheckinService",
     "NotificationService",
     "DeepSeclusionService",
+    "BreakthroughService",
 ]
