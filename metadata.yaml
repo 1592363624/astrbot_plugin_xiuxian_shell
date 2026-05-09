@@ -1,5 +1,6 @@
 # 插件元数据
 name: 重生之凡人修仙
+display_name: 重生之凡人修仙
 version: 0.0.2
 description: 重生之凡人修仙，文字修仙游戏插件
 author: Shell
@@ -9,3 +10,7 @@ keywords:
   - 文游
 min_astrbot_version: "4.5.0"
 python_requires: ">=3.10"
+repo: "https://github.com/1592363624/astrbot_plugin_xiuxian_shell"
+support_platforms:
+  - aiocqhttp
+  - lark
