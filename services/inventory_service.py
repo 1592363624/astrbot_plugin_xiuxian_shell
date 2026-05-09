@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from ..config import ConfigManager
     from ..data.json_data_manager import JsonDataManager
     from .cultivation_service import CultivationService
+    from .item_effect_service import ItemEffectService
 
 
 DEFAULT_ITEMS_DATA = [
@@ -723,3 +724,40 @@ class InventoryService:
         if success and item_id in self._items_cache:
             del self._items_cache[item_id]
         return success
+
+    # ==================== 新效果系统接口 ====================
+
+    async def use_item_with_effect_system(
+        self,
+        player_id: str,
+        item_name: str,
+        quantity: int = 1,
+        item_effect_service: "ItemEffectService" = None,
+    ) -> dict[str, Any]:
+        """
+        使用物品（新效果系统版本）
+        委托给 ItemEffectService 处理条件校验和效果触发
+
+        Args:
+            player_id: 玩家ID
+            item_name: 物品名称
+            quantity: 使用数量
+            item_effect_service: 物品效果服务实例
+
+        Returns:
+            Dict[str, Any]: 使用结果
+        """
+        if quantity < 1:
+            raise ValueError("使用数量必须大于0")
+
+        item = await self.get_item_by_name(item_name)
+        if not item:
+            return {
+                "success": False,
+                "message": f"未找到名为【{item_name}】的物品",
+            }
+
+        if not item_effect_service:
+            raise ValueError("物品效果服务未初始化")
+
+        return await item_effect_service.use_item(player_id, item, quantity)

@@ -33,6 +33,7 @@ from .services import (
     DeepSeclusionService,
     EventService,
     InventoryService,
+    ItemEffectService,
     MarketService,
     NotificationService,
     PlayerService,
@@ -80,11 +81,19 @@ class XiuxianPlugin(Star):
         self.market_service = MarketService(
             self.db_manager, self.config_manager, self.inventory_service
         )
+        # 初始化物品效果服务（新效果系统）
+        self.item_effect_service = ItemEffectService(
+            self.db_manager,
+            self.config_manager,
+            self.json_data_manager,
+            self.cultivation_service,
+            self.inventory_service,
+        )
         # 初始化API层
         self.player_api = PlayerAPI(
             self.player_service, self.deep_seclusion_service, self.cultivation_service
         )
-        self.item_api = ItemAPI(self.inventory_service, self.player_service)
+        self.item_api = ItemAPI(self.inventory_service, self.player_service, self.item_effect_service)
         self.cultivation_api = CultivationAPI(
             self.cultivation_service, self.player_service
         )
@@ -110,6 +119,7 @@ class XiuxianPlugin(Star):
             self.admin_api,
             self.checkin_api,
             self.notification_api,
+            item_effect_service=self.item_effect_service,
             host="0.0.0.0",
             port=admin_port,
             password=admin_password,
@@ -351,6 +361,33 @@ class XiuxianPlugin(Star):
             yield event.plain_result(ban_message)
             return
         result = await self.item_api.get_toxicity_status(user_id)
+        yield event.plain_result(result)
+
+    @filter.command("使用")
+    async def use_item(self, event: AstrMessageEvent):
+        """使用物品（新效果系统），示例：使用 聚灵丹 / 使用 回春丹 3"""
+        user_id = event.get_sender_id()
+        ban_message = await self._check_player_banned(user_id)
+        if ban_message:
+            yield event.plain_result(ban_message)
+            return
+        message = event.get_message_str().replace("使用", "").strip()
+
+        if not message:
+            yield event.plain_result(
+                "用法：使用 <物品名> [数量]\n示例：使用 聚灵丹 / 使用 回春丹 3"
+            )
+            return
+
+        parts = message.rsplit(None, 1)
+        if len(parts) == 2 and parts[1].isdigit():
+            item_name = parts[0]
+            quantity = int(parts[1])
+        else:
+            item_name = message
+            quantity = 1
+
+        result = await self.item_api.use_item(user_id, item_name, quantity)
         yield event.plain_result(result)
 
     @filter.command("储物袋")
@@ -595,6 +632,7 @@ class XiuxianPlugin(Star):
 避世 - 开启和平模式(仅限炼气期)
 入世 - 关闭和平模式
 服用 <丹药名> [数量] - 服用丹药，示例：服用 聚灵丹 / 服用 回春丹 3
+使用 <物品名> [数量] - 使用物品（新效果系统），示例：使用 聚灵丹 / 使用 回春丹 3
 丹毒 - 查看丹毒状态
 储物袋 - 查看储物袋物品
 更改道号 <新道号> - 修改角色道号（2-6个中文字符）

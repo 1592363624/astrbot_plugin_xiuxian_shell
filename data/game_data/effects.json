@@ -1,0 +1,94 @@
+[
+  {
+    "effect_id": "effect_001",
+    "effect_name": "聚灵效果",
+    "effect_type": "add_cultivation",
+    "effect_params": {
+      "cultivation_value": 100
+    },
+    "effect_desc": "增加100点修为"
+  },
+  {
+    "effect_id": "effect_002",
+    "effect_name": "回春效果",
+    "effect_type": "heal",
+    "effect_params": {
+      "heal_value": 50
+    },
+    "effect_desc": "恢复50点生命值"
+  },
+  {
+    "effect_id": "effect_003",
+    "effect_name": "灵石获取",
+    "effect_type": "add_spirit_stone",
+    "effect_params": {
+      "stone_value": 1
+    },
+    "effect_desc": "获得1枚灵石"
+  },
+  {
+    "effect_id": "effect_004",
+    "effect_name": "解毒效果",
+    "effect_type": "detox",
+    "effect_params": {},
+    "effect_desc": "清除体内丹毒"
+  },
+  {
+    "effect_id": "effect_005",
+    "effect_name": "筑基加成",
+    "effect_type": "add_breakthrough_rate",
+    "effect_params": {
+      "rate_value": 20
+    },
+    "effect_desc": "突破筑基成功率+20%"
+  },
+  {
+    "effect_id": "effect_006",
+    "effect_name": "破境加成",
+    "effect_type": "add_breakthrough_rate",
+    "effect_params": {
+      "rate_value": 30
+    },
+    "effect_desc": "突破境界成功率+30%"
+  },
+  {
+    "effect_id": "effect_007",
+    "effect_name": "防御加成",
+    "effect_type": "add_temp_attribute",
+    "effect_params": {
+      "attribute_type": "defense",
+      "attribute_value": 50,
+      "duration": 3600
+    },
+    "effect_desc": "1小时内防御+50"
+  },
+  {
+    "effect_id": "effect_008",
+    "effect_name": "攻击加成",
+    "effect_type": "add_temp_attribute",
+    "effect_params": {
+      "attribute_type": "attack",
+      "attribute_value": 50,
+      "duration": 3600
+    },
+    "effect_desc": "1小时内攻击+50"
+  },
+  {
+    "effect_id": "effect_009",
+    "effect_name": "大聚灵效果",
+    "effect_type": "add_cultivation",
+    "effect_params": {
+      "cultivation_value": 500
+    },
+    "effect_desc": "增加500点修为"
+  },
+  {
+    "effect_id": "effect_010",
+    "effect_name": "小回春效果",
+    "effect_type": "heal",
+    "effect_params": {
+      "heal_value": 20
+    },
+    "effect_desc": "恢复20点生命值"
+  }
+]

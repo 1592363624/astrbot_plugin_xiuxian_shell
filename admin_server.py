@@ -20,6 +20,7 @@ class AdminServer:
         admin_api: Any,
         checkin_api: Any,
         notification_api: Any,
+        item_effect_service: Any = None,
         host: str = "0.0.0.0",
         port: int = 0,
         password: str = "",
@@ -31,6 +32,7 @@ class AdminServer:
             admin_api: 后台管理API实例
             checkin_api: 签到API实例
             notification_api: 通知API实例
+            item_effect_service: 物品效果服务实例
             host: 监听地址
             port: 监听端口，0表示自动分配
             password: 管理后台密码
@@ -38,6 +40,7 @@ class AdminServer:
         self.admin_api = admin_api
         self.checkin_api = checkin_api
         self.notification_api = notification_api
+        self.item_effect_service = item_effect_service
         self.host = host
         self.port = port
         self.password = password or "xiuxian_admin"
@@ -221,6 +224,23 @@ class AdminServer:
         self._app.router.add_put(
             "/api/xiuxian/breakthrough-conditions/{condition_id}",
             self._handle_breakthrough_condition_update,
+        )
+        # 效果管理
+        self._app.router.add_get("/api/xiuxian/effects", self._handle_effects)
+        self._app.router.add_get(
+            "/api/xiuxian/effects/{effect_id}", self._handle_effect_detail
+        )
+        self._app.router.add_post("/api/xiuxian/effects", self._handle_create_effect)
+        self._app.router.add_put(
+            "/api/xiuxian/effects/{effect_id}", self._handle_update_effect
+        )
+        self._app.router.add_delete(
+            "/api/xiuxian/effects/{effect_id}", self._handle_delete_effect
+        )
+        # 提示文案管理
+        self._app.router.add_get("/api/xiuxian/prompts", self._handle_prompts)
+        self._app.router.add_put(
+            "/api/xiuxian/prompts/{prompt_key}", self._handle_update_prompt
         )
         # 认证
         self._app.router.add_post("/api/xiuxian/auth/login", self._handle_login)
@@ -952,3 +972,124 @@ class AdminServer:
         condition_id = request.match_info.get("condition_id")
         result = await self.admin_api.update_breakthrough_condition(condition_id)
         return web.json_response(result)
+
+    # ==================== 效果管理处理器 ====================
+
+    async def _handle_effects(self, request: web.Request) -> web.Response:
+        """获取所有效果配置"""
+        auth_error = self._require_auth(request)
+        if auth_error:
+            return auth_error
+        try:
+            effects = await self.item_effect_service.get_all_effects()
+            return self._json_response({"success": True, "data": effects})
+        except Exception as e:
+            logger.error(f"获取效果列表失败: {e}")
+            return self._json_response({"success": False, "error": str(e)}, 500)
+
+    async def _handle_effect_detail(self, request: web.Request) -> web.Response:
+        """获取单个效果配置详情"""
+        auth_error = self._require_auth(request)
+        if auth_error:
+            return auth_error
+        effect_id = request.match_info.get("effect_id")
+        try:
+            effect = await self.item_effect_service.get_effect_by_id(effect_id)
+            if effect:
+                return self._json_response({"success": True, "data": effect})
+            return self._json_response(
+                {"success": False, "error": f"效果 {effect_id} 不存在"}, 404
+            )
+        except Exception as e:
+            logger.error(f"获取效果详情失败: {e}")
+            return self._json_response({"success": False, "error": str(e)}, 500)
+
+    async def _handle_create_effect(self, request: web.Request) -> web.Response:
+        """创建新效果配置"""
+        auth_error = self._require_auth(request)
+        if auth_error:
+            return auth_error
+        try:
+            data = await request.json()
+            new_effect = await self.item_effect_service.create_effect(data)
+            return self._json_response(
+                {"success": True, "data": new_effect, "message": "效果创建成功"},
+                201,
+            )
+        except Exception as e:
+            logger.error(f"创建效果失败: {e}")
+            return self._json_response({"success": False, "error": str(e)}, 400)
+
+    async def _handle_update_effect(self, request: web.Request) -> web.Response:
+        """更新效果配置"""
+        auth_error = self._require_auth(request)
+        if auth_error:
+            return auth_error
+        effect_id = request.match_info.get("effect_id")
+        try:
+            data = await request.json()
+            updated = await self.item_effect_service.update_effect(effect_id, data)
+            if updated:
+                return self._json_response(
+                    {"success": True, "data": updated, "message": "效果更新成功"}
+                )
+            return self._json_response(
+                {"success": False, "error": f"效果 {effect_id} 不存在"}, 404
+            )
+        except Exception as e:
+            logger.error(f"更新效果失败: {e}")
+            return self._json_response({"success": False, "error": str(e)}, 400)
+
+    async def _handle_delete_effect(self, request: web.Request) -> web.Response:
+        """删除效果配置"""
+        auth_error = self._require_auth(request)
+        if auth_error:
+            return auth_error
+        effect_id = request.match_info.get("effect_id")
+        try:
+            success = await self.item_effect_service.delete_effect(effect_id)
+            if success:
+                return self._json_response(
+                    {"success": True, "message": f"效果 {effect_id} 已删除"}
+                )
+            return self._json_response(
+                {"success": False, "error": f"效果 {effect_id} 不存在"}, 404
+            )
+        except Exception as e:
+            logger.error(f"删除效果失败: {e}")
+            return self._json_response({"success": False, "error": str(e)}, 500)
+
+    # ==================== 提示文案管理处理器 ====================
+
+    async def _handle_prompts(self, request: web.Request) -> web.Response:
+        """获取所有提示文案配置"""
+        auth_error = self._require_auth(request)
+        if auth_error:
+            return auth_error
+        try:
+            prompts = await self.item_effect_service.get_all_prompts()
+            return self._json_response({"success": True, "data": prompts})
+        except Exception as e:
+            logger.error(f"获取提示文案失败: {e}")
+            return self._json_response({"success": False, "error": str(e)}, 500)
+
+    async def _handle_update_prompt(self, request: web.Request) -> web.Response:
+        """更新单条提示文案"""
+        auth_error = self._require_auth(request)
+        if auth_error:
+            return auth_error
+        prompt_key = request.match_info.get("prompt_key")
+        try:
+            data = await request.json()
+            value = data.get("value", "")
+            if not value:
+                return self._json_response(
+                    {"success": False, "error": "提示文案内容不能为空"}, 400
+                )
+            await self.item_effect_service.update_prompt(prompt_key, value)
+            return self._json_response(
+                {"success": True, "message": f"提示文案 {prompt_key} 更新成功"}
+            )
+        except Exception as e:
+            logger.error(f"更新提示文案失败: {e}")
+            return self._json_response({"success": False, "error": str(e)}, 400)

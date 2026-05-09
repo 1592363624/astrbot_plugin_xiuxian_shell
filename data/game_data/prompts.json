@@ -1,0 +1,17 @@
+{
+  "realm_not_enough": "境界不足，无法使用【{item_name}】，需达到{required_realm}（当前：{current_realm}）",
+  "lack_item": "缺少使用【{item_name}】所需物品：【{lack_item_name}】x{lack_num}（当前拥有：{current_num}）",
+  "lack_num": "【{item_name}】数量不足，需{need_num}个（当前拥有：{current_num}）",
+  "use_success": "成功使用【{item_name}】！",
+  "use_passive": "【{item_name}】被动生效，{effect_desc}",
+  "no_use_permission": "无法使用【{item_name}】，无使用权限",
+  "item_not_found": "未找到名为【{item_name}】的物品",
+  "item_not_usable": "【{item_name}】不可使用",
+  "use_success_juju_dan": "成功使用【聚灵丹】，获得{cultivation_value}点修为！",
+  "use_success_huichun_dan": "成功使用【回春丹】，恢复了{heal_value}点生命值！",
+  "use_success_detox": "成功使用【清灵丹】，体内丹毒已被清除！",
+  "use_success_breakthrough": "成功使用【{item_name}】，突破成功率提升{rate_value}%！",
+  "cultivation_not_enough": "修为不足，无法使用【{item_name}】，需{required_cultivation}修为（当前：{current_cultivation}）",
+  "effect_trigger_error": "效果触发失败：{error_msg}",
+  "use_generic_success": "成功使用【{item_name}】，{effect_desc}"
+}

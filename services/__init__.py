@@ -10,6 +10,7 @@ from .cultivation_service import CultivationService
 from .deep_seclusion_service import DeepSeclusionService
 from .event_service import EventService
 from .inventory_service import InventoryService
+from .item_effect_service import ItemEffectService
 from .market_service import MarketService
 from .notification_service import NotificationService
 from .player_service import PlayerService
@@ -25,4 +26,5 @@ __all__ = [
     "DeepSeclusionService",
     "BreakthroughService",
     "MarketService",
+    "ItemEffectService",
 ]
