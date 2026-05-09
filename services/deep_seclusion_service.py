@@ -16,13 +16,17 @@ from ..database import DatabaseManager
 
 if TYPE_CHECKING:
     from ..config import ConfigManager
+    from .cultivation_service import CultivationService
 
 
 class DeepSeclusionService:
     """深度闭关服务类"""
 
     def __init__(
-        self, db_manager: DatabaseManager, config_manager: "ConfigManager" = None
+        self,
+        db_manager: DatabaseManager,
+        config_manager: "ConfigManager" = None,
+        cultivation_service: "CultivationService" = None,
     ):
         """
         初始化深度闭关服务
@@ -30,9 +34,11 @@ class DeepSeclusionService:
         Args:
             db_manager: 数据库管理器实例
             config_manager: 配置管理器实例
+            cultivation_service: 修炼服务实例(用于获取境界信息)
         """
         self.db = db_manager
         self.config_manager = config_manager
+        self.cultivation_service = cultivation_service
         # 避世/入世操作冷却时间戳缓存 {player_id: timestamp}
         self._peace_mode_cooldowns: dict[str, float] = {}
 
@@ -304,13 +310,17 @@ class DeepSeclusionService:
         """
         # 获取玩家当前境界用于计算修为
         player = await self.db.fetch_one(
-            "SELECT p.realm_id, r.experience_required FROM players p JOIN realms r ON p.realm_id = r.id WHERE p.id = ?",
+            "SELECT realm_id FROM players WHERE id = ?",
             (player_id,),
         )
         if not player:
             return {"success": False, "message": "玩家不存在"}
 
-        base_exp = player["experience_required"]
+        base_exp = 0
+        if self.cultivation_service:
+            realm = await self.cultivation_service.get_realm_by_id(player["realm_id"])
+            if realm:
+                base_exp = realm.experience_required
 
         # 获取闭关配置
         seclusion_cfg = {}
@@ -633,18 +643,24 @@ class DeepSeclusionService:
             return cooldown_check
 
         player = await self.db.fetch_one(
-            "SELECT p.*, r.level as realm_level, r.name as realm_name FROM players p JOIN realms r ON p.realm_id = r.id WHERE p.id = ?",
+            "SELECT * FROM players WHERE id = ?",
             (player_id,),
         )
         if not player:
             raise ValueError("玩家不存在")
 
+        realm = None
+        if self.cultivation_service:
+            realm = await self.cultivation_service.get_realm_by_id(player["realm_id"])
+
+        realm_level = realm.level if realm and hasattr(realm, 'level') else player.get("realm_level", 1)
+        realm_name = realm.name if realm and hasattr(realm, 'name') else player.get("realm_name", "未知")
+
         # 检查是否为炼气期（realm_001 凡人/炼气）
-        realm_level = player["realm_level"]
         if realm_level > 1:
             return {
                 "success": False,
-                "message": f"你已达到【{player['realm_name']}】，红尘历练才是正道，无法避世。",
+                "message": f"你已达到【{realm_name}】，红尘历练才是正道，无法避世。",
             }
 
         # 检查是否已在避世状态
@@ -788,7 +804,7 @@ class DeepSeclusionService:
             Dict[str, Any]: 惩罚结果
         """
         player = await self.db.fetch_one(
-            "SELECT p.*, r.level as realm_level, r.name as realm_name FROM players p JOIN realms r ON p.realm_id = r.id WHERE p.id = ?",
+            "SELECT * FROM players WHERE id = ?",
             (loser_id,),
         )
         if not player:
@@ -844,28 +860,38 @@ class DeepSeclusionService:
             Optional[Dict[str, Any]]: 跌落结果，已在最低境界返回None
         """
         player = await self.db.fetch_one(
-            "SELECT p.*, r.level as realm_level, r.name as realm_name FROM players p JOIN realms r ON p.realm_id = r.id WHERE p.id = ?",
+            "SELECT * FROM players WHERE id = ?",
             (player_id,),
         )
         if not player:
             return None
 
-        current_level = player["realm_level"]
+        player_realm = None
+        if self.cultivation_service:
+            player_realm = await self.cultivation_service.get_realm_by_id(player["realm_id"])
+
+        current_level = player_realm.level if player_realm and hasattr(player_realm, 'level') else player.get("realm_level", 1)
         if current_level <= 1:
             return None
 
         # 获取前一个境界
-        prev_realm = await self.db.fetch_one(
-            "SELECT * FROM realms WHERE level < ? ORDER BY level DESC LIMIT 1",
-            (current_level,),
-        )
-        if not prev_realm:
+        prev_realm = None
+        prev_realm_dict = None
+        if self.cultivation_service:
+            all_realms = await self.cultivation_service.get_all_realms()
+            for realm in all_realms:
+                if realm.level < current_level:
+                    if prev_realm is None or realm.level > prev_realm.level:
+                        prev_realm = realm
+                        prev_realm_dict = realm.to_dict() if hasattr(realm, 'to_dict') else realm
+
+        if not prev_realm_dict:
             return None
 
         from ..utils.attributes import calc_battle_attrs
 
         new_attrs = calc_battle_attrs(
-            level=prev_realm["level"],
+            level=prev_realm_dict["level"],
             bone=player["bone"],
             spirit=player["spirit"],
             intel=player["intel"],
@@ -884,7 +910,7 @@ class DeepSeclusionService:
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?""",
             (
-                prev_realm["id"],
+                prev_realm_dict["id"],
                 new_attrs["max_health"],
                 new_attrs["max_mp"],
                 new_attrs["max_stamina"],
@@ -895,9 +921,9 @@ class DeepSeclusionService:
 
         return {
             "old_realm": player["realm_name"],
-            "new_realm": prev_realm["name"],
+            "new_realm": prev_realm_dict["name"],
             "old_level": current_level,
-            "new_level": prev_realm["level"],
+            "new_level": prev_realm_dict["level"],
         }
 
     async def _drop_items(self, player_id: str) -> dict[str, Any]:

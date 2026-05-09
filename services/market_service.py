@@ -14,13 +14,17 @@ from ..database import DatabaseManager
 
 if TYPE_CHECKING:
     from ..config import ConfigManager
+    from .inventory_service import InventoryService
 
 
 class MarketService:
     """万宝楼服务类"""
 
     def __init__(
-        self, db_manager: DatabaseManager, config_manager: "ConfigManager" = None
+        self,
+        db_manager: DatabaseManager,
+        config_manager: "ConfigManager" = None,
+        inventory_service: "InventoryService" = None,
     ):
         """
         初始化万宝楼服务
@@ -28,9 +32,11 @@ class MarketService:
         Args:
             db_manager: 数据库管理器实例
             config_manager: 配置管理器实例
+            inventory_service: 物品服务实例(用于获取物品信息)
         """
         self.db = db_manager
         self.config_manager = config_manager
+        self.inventory_service = inventory_service
 
     async def get_item_by_name(self, item_name: str) -> dict[str, Any] | None:
         """
@@ -42,10 +48,11 @@ class MarketService:
         Returns:
             物品信息字典或None
         """
-        return await self.db.fetch_one(
-            "SELECT * FROM items WHERE name = ?",
-            (item_name,),
-        )
+        if self.inventory_service:
+            item = await self.inventory_service.get_item_by_name(item_name)
+            if item:
+                return item.to_dict()
+        return None
 
     async def get_player_inventory_item(
         self, player_id: str, item_id: str

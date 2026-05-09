@@ -5,17 +5,25 @@
 """
 
 import random
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..database import DatabaseManager
 from ..utils.attributes import calc_battle_attrs
+
+if TYPE_CHECKING:
+    from .cultivation_service import CultivationService
 
 
 class CombatService:
     """战斗服务类"""
 
-    def __init__(self, db_manager: DatabaseManager):
+    def __init__(
+        self,
+        db_manager: DatabaseManager,
+        cultivation_service: "CultivationService" = None,
+    ):
         self.db = db_manager
+        self.cultivation_service = cultivation_service
 
     async def _get_player_with_battle_attrs(
         self, player_id: str
@@ -35,10 +43,11 @@ class CombatService:
         if not player:
             return None
 
-        realm = await self.db.fetch_one(
-            "SELECT level FROM realms WHERE id = ?", (player["realm_id"],)
-        )
-        realm_level = realm["level"] if realm else 1
+        realm_level = 1
+        if self.cultivation_service:
+            realm = await self.cultivation_service.get_realm_by_id(player["realm_id"])
+            if realm:
+                realm_level = realm.level
 
         battle_attrs = calc_battle_attrs(
             level=realm_level,

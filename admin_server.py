@@ -346,18 +346,25 @@ class AdminServer:
         auth_error = self._require_auth(request)
         if auth_error:
             return auth_error
+
         player_count = await self.admin_api.player_service.db.fetch_one(
             "SELECT COUNT(*) as count FROM players"
-        )
-        realm_distribution = await self.admin_api.player_service.db.fetch_all(
-            """SELECT r.name, COUNT(p.id) as count
-            FROM players p
-            JOIN realms r ON p.realm_id = r.id
-            GROUP BY r.name"""
         )
         total_stones = await self.admin_api.player_service.db.fetch_one(
             "SELECT SUM(spirit_stone) as total FROM players"
         )
+
+        players = await self.admin_api.player_service.get_all_players(page=1, page_size=10000)
+        realm_stats = {}
+        realms_cache = {r.level: r.name for r in await self.admin_api.cultivation_service.get_all_realms()}
+
+        for player_data in players.get("players", []):
+            realm_level = player_data.get("realm_level", 1)
+            realm_name = realms_cache.get(realm_level, "未知")
+            realm_stats[realm_name] = realm_stats.get(realm_name, 0) + 1
+
+        realm_distribution = [{"name": name, "count": count} for name, count in realm_stats.items()]
+
         return self._ok(
             {
                 "player_count": player_count["count"] if player_count else 0,

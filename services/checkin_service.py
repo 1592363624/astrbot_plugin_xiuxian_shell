@@ -13,21 +13,24 @@ from ..database import DatabaseManager
 
 if TYPE_CHECKING:
     from ..config import ConfigManager
+    from .cultivation_service import CultivationService
 
 
 class CheckinService:
     """签到服务类"""
 
-    def __init__(self, db_manager: DatabaseManager, config_manager: "ConfigManager"):
+    def __init__(self, db_manager: DatabaseManager, config_manager: "ConfigManager", cultivation_service: "CultivationService" = None):
         """
         初始化签到服务
 
         Args:
             db_manager: 数据库管理器实例
             config_manager: 配置管理器实例
+            cultivation_service: 修炼服务实例(用于获取境界信息)
         """
         self.db = db_manager
         self.config_manager = config_manager
+        self.cultivation_service = cultivation_service
 
     def _get_reward_rate(self, consecutive_days: int) -> int:
         """
@@ -70,23 +73,23 @@ class CheckinService:
             return 0
 
         # 获取当前境界等级
-        current_realm = await self.db.fetch_one(
-            "SELECT level FROM realms WHERE id = ?", (player["realm_id"],)
-        )
-        if not current_realm:
-            return 0
+        current_realm_level = 1
+        current_exp_required = 100
+        if self.cultivation_service:
+            realm = await self.cultivation_service.get_realm_by_id(player["realm_id"])
+            if realm:
+                current_realm_level = realm.level
+                current_exp_required = realm.experience_required
 
         # 获取下一境界的 experience_required（即升级所需修为）
-        next_realm = await self.db.fetch_one(
-            "SELECT experience_required FROM realms WHERE level > ? ORDER BY level ASC LIMIT 1",
-            (current_realm["level"],),
-        )
+        next_exp = 0
+        if self.cultivation_service:
+            next_realm = await self.cultivation_service.get_next_realm(current_realm_level)
+            if next_realm:
+                next_exp = next_realm.experience_required
+
         # 已达最高境界时，使用当前境界自身 experience_required 作为基准
-        base_exp = (
-            next_realm["experience_required"]
-            if next_realm
-            else current_realm.get("experience_required", 100)
-        )
+        base_exp = next_exp if next_exp > 0 else current_exp_required
 
         # 按百分比计算奖励，至少为1
         rate = self._get_reward_rate(consecutive_days)

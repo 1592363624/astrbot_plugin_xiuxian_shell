@@ -13,13 +13,17 @@ from ..database import DatabaseManager
 
 if TYPE_CHECKING:
     from ..config import ConfigManager
+    from .cultivation_service import CultivationService
 
 
 class BreakthroughService:
     """突破服务类"""
 
     def __init__(
-        self, db_manager: DatabaseManager, config_manager: "ConfigManager" = None
+        self,
+        db_manager: DatabaseManager,
+        config_manager: "ConfigManager" = None,
+        cultivation_service: "CultivationService" = None,
     ):
         """
         初始化突破服务
@@ -27,9 +31,11 @@ class BreakthroughService:
         Args:
             db_manager: 数据库管理器实例
             config_manager: 配置管理器实例
+            cultivation_service: 修炼服务实例(用于获取境界信息)
         """
         self.db = db_manager
         self.config_manager = config_manager
+        self.cultivation_service = cultivation_service
 
     async def get_breakthrough_condition(self, realm_id: str) -> dict[str, Any] | None:
         """
@@ -236,30 +242,37 @@ class BreakthroughService:
             Optional[Dict[str, Any]]: 突破结果，不满足条件返回None
         """
         player = await self.db.fetch_one(
-            "SELECT p.*, r.level as realm_level, r.name as realm_name, r.experience_required as realm_exp_required "
-            "FROM players p JOIN realms r ON p.realm_id = r.id WHERE p.id = ?",
+            "SELECT * FROM players WHERE id = ?",
             (player_id,),
         )
         if not player:
             return None
 
-        current_level = player["realm_level"]
+        player_realm = None
+        if self.cultivation_service:
+            player_realm = await self.cultivation_service.get_realm_by_id(player["realm_id"])
+
+        current_level = player_realm.level if player_realm and hasattr(player_realm, 'level') else player.get("realm_level", 1)
         current_exp = player["experience"]
 
-        # 获取下一境界
-        next_realm = await self.db.fetch_one(
-            "SELECT * FROM realms WHERE level > ? ORDER BY level ASC LIMIT 1",
-            (current_level,),
-        )
-        if not next_realm:
+        next_realm = None
+        next_realm_dict = None
+        if self.cultivation_service:
+            next_realm = await self.cultivation_service.get_next_realm(current_level)
+            if next_realm and hasattr(next_realm, 'to_dict'):
+                next_realm_dict = next_realm.to_dict()
+            elif next_realm:
+                next_realm_dict = next_realm
+
+        if not next_realm or not next_realm_dict:
             return None
 
         # 检查修为是否达到要求
-        if current_exp < next_realm["experience_required"]:
+        if current_exp < next_realm_dict["experience_required"]:
             return None
 
         # 查询是否有突破条件
-        condition = await self.get_breakthrough_condition(next_realm["id"])
+        condition = await self.get_breakthrough_condition(next_realm_dict["id"])
         if not condition:
             # 无条件限制，直接突破
             return await self._perform_breakthrough(player_id, player, next_realm)
@@ -285,7 +298,7 @@ class BreakthroughService:
                     "can_breakthrough": False,
                     "message": (
                         f"【突破瓶颈】你的修为已达到【{player['realm_name']}】巅峰，"
-                        f"欲突破至【{next_realm['name']}】还需：{', '.join(missing_names)}"
+                        f"欲突破至【{next_realm_dict['name']}】还需：{', '.join(missing_names)}"
                     ),
                 }
 
@@ -310,42 +323,52 @@ class BreakthroughService:
             Dict[str, Any]: 突破结果
         """
         player = await self.db.fetch_one(
-            "SELECT p.*, r.level as realm_level, r.name as realm_name, r.experience_required as realm_exp_required "
-            "FROM players p JOIN realms r ON p.realm_id = r.id WHERE p.id = ?",
+            "SELECT * FROM players WHERE id = ?",
             (player_id,),
         )
         if not player:
             raise ValueError("玩家不存在")
 
-        current_level = player["realm_level"]
+        player_realm = None
+        if self.cultivation_service:
+            player_realm = await self.cultivation_service.get_realm_by_id(player["realm_id"])
+
+        current_level = player_realm.level if player_realm and hasattr(player_realm, 'level') else player.get("realm_level", 1)
         current_exp = player["experience"]
 
         # 确定目标境界
+        next_realm = None
+        next_realm_dict = None
         if target_realm_id:
-            next_realm = await self.db.fetch_one(
-                "SELECT * FROM realms WHERE id = ?", (target_realm_id,)
-            )
+            if self.cultivation_service:
+                next_realm = await self.cultivation_service.get_realm_by_id(target_realm_id)
+                if next_realm and hasattr(next_realm, 'to_dict'):
+                    next_realm_dict = next_realm.to_dict()
+                elif next_realm:
+                    next_realm_dict = next_realm
         else:
-            next_realm = await self.db.fetch_one(
-                "SELECT * FROM realms WHERE level > ? ORDER BY level ASC LIMIT 1",
-                (current_level,),
-            )
+            if self.cultivation_service:
+                next_realm = await self.cultivation_service.get_next_realm(current_level)
+                if next_realm and hasattr(next_realm, 'to_dict'):
+                    next_realm_dict = next_realm.to_dict()
+                elif next_realm:
+                    next_realm_dict = next_realm
 
-        if not next_realm:
+        if not next_realm or not next_realm_dict:
             return {
                 "success": False,
                 "message": "你已达到最高境界，无法继续突破",
             }
 
         # 检查修为是否达到要求
-        if current_exp < next_realm["experience_required"]:
+        if current_exp < next_realm_dict["experience_required"]:
             return {
                 "success": False,
-                "message": f"修为不足，需要 {next_realm['experience_required']} 点修为，当前仅有 {current_exp} 点",
+                "message": f"修为不足，需要 {next_realm_dict['experience_required']} 点修为，当前仅有 {current_exp} 点",
             }
 
         # 查询突破条件
-        condition = await self.get_breakthrough_condition(next_realm["id"])
+        condition = await self.get_breakthrough_condition(next_realm_dict["id"])
         if condition and condition["condition_type"] == "manual":
             # 手动突破需要检查物品
             item_requirements = condition.get("item_requirements", [])
@@ -361,7 +384,7 @@ class BreakthroughService:
                     return {
                         "success": False,
                         "message": (
-                            f"【{next_realm['name']}之劫】"
+                            f"【{next_realm_dict['name']}之劫】"
                             f"集齐以下至宝方可渡劫：{', '.join(missing_names)}"
                         ),
                     }
@@ -532,36 +555,44 @@ class BreakthroughService:
             Dict[str, Any]: 突破状态信息
         """
         player = await self.db.fetch_one(
-            "SELECT p.*, r.level as realm_level, r.name as realm_name, r.experience_required as realm_exp_required "
-            "FROM players p JOIN realms r ON p.realm_id = r.id WHERE p.id = ?",
+            "SELECT * FROM players WHERE id = ?",
             (player_id,),
         )
         if not player:
             raise ValueError("玩家不存在")
 
-        current_level = player["realm_level"]
-        current_exp = player["experience"]
-        current_realm_name = player["realm_name"]
+        player_realm = None
+        if self.cultivation_service:
+            player_realm = await self.cultivation_service.get_realm_by_id(player["realm_id"])
 
-        next_realm = await self.db.fetch_one(
-            "SELECT * FROM realms WHERE level > ? ORDER BY level ASC LIMIT 1",
-            (current_level,),
-        )
-        if not next_realm:
+        current_level = player_realm.level if player_realm and hasattr(player_realm, 'level') else player.get("realm_level", 1)
+        current_exp = player["experience"]
+        current_realm_name = player_realm.name if player_realm and hasattr(player_realm, 'name') else player.get("realm_name", "未知")
+
+        next_realm = None
+        next_realm_dict = None
+        if self.cultivation_service:
+            next_realm = await self.cultivation_service.get_next_realm(current_level)
+            if next_realm and hasattr(next_realm, 'to_dict'):
+                next_realm_dict = next_realm.to_dict()
+            elif next_realm:
+                next_realm_dict = next_realm
+
+        if not next_realm or not next_realm_dict:
             return {
                 "can_breakthrough": False,
                 "message": "你已达到最高境界",
             }
 
         # 查询突破条件
-        condition = await self.get_breakthrough_condition(next_realm["id"])
+        condition = await self.get_breakthrough_condition(next_realm_dict["id"])
 
         result = {
             "current_realm": current_realm_name,
-            "next_realm": next_realm["name"],
+            "next_realm": next_realm_dict["name"],
             "current_exp": current_exp,
-            "required_exp": next_realm["experience_required"],
-            "exp_enough": current_exp >= next_realm["experience_required"],
+            "required_exp": next_realm_dict["experience_required"],
+            "exp_enough": current_exp >= next_realm_dict["experience_required"],
             "condition": condition,
         }
 

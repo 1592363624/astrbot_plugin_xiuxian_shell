@@ -411,16 +411,20 @@ class AdminAPI:
             "SELECT COUNT(*) as count FROM players"
         )
 
-        realm_distribution = await self.player_service.db.fetch_all(
-            """SELECT r.name, COUNT(p.id) as count
-            FROM players p
-            JOIN realms r ON p.realm_id = r.id
-            GROUP BY r.name"""
-        )
-
         total_stones = await self.player_service.db.fetch_one(
             "SELECT SUM(spirit_stone) as total FROM players"
         )
+
+        all_realms = {r.level: r.name for r in await self.cultivation_service.get_all_realms()}
+        players_result = await self.player_service.get_all_players(page=1, page_size=100000)
+        realm_stats = {}
+
+        for player_data in players_result.get("players", []):
+            realm_level = player_data.get("realm_level", 1)
+            realm_name = all_realms.get(realm_level, "未知")
+            realm_stats[realm_name] = realm_stats.get(realm_name, 0) + 1
+
+        realm_distribution = [{"name": name, "count": count} for name, count in realm_stats.items()]
 
         return jsonify(
             {

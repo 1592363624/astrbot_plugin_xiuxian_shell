@@ -3,9 +3,12 @@ AstrBot文字修仙游戏插件主入口
 负责插件生命周期管理和命令注册，不包含具体业务逻辑
 """
 
+from pathlib import Path
+
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star
+from astrbot.core.star import StarTools
 from astrbot.core.star.filter.permission import PermissionType
 
 from .admin_server import AdminServer
@@ -20,6 +23,7 @@ from .api import (
     PlayerAPI,
 )
 from .config import ConfigManager
+from .data.json_data_manager import JsonDataManager
 from .database import DatabaseManager, MigrationManager
 from .services import (
     BreakthroughService,
@@ -40,38 +44,46 @@ class XiuxianPlugin(Star):
 
     def __init__(self, context: Context, config=None):
         super().__init__(context)
-        # 初始化配置管理器
+        self.plugin_name = "astrbot_plugin_xiuxian_shell"
         self.config_manager = ConfigManager(context, config)
-        # 初始化数据库管理器
         self.db_manager = DatabaseManager(self.config_manager.get_db_path())
-        # 初始化迁移管理器
         self.migration_manager = MigrationManager(self.db_manager)
-        # 初始化服务层
-        self.player_service = PlayerService(self.db_manager, self.config_manager)
+        json_data_dir = Path(__file__).parent / "data" / "game_data"
+        self.json_data_manager = JsonDataManager(json_data_dir)
         self.cultivation_service = CultivationService(
-            self.db_manager, self.config_manager
+            self.db_manager, self.config_manager, self.json_data_manager
         )
-        self.combat_service = CombatService(self.db_manager)
-        self.inventory_service = InventoryService(self.db_manager, self.config_manager)
-        self.event_service = EventService(self.db_manager)
+        self.player_service = PlayerService(self.db_manager, self.config_manager, self.cultivation_service)
+        self.combat_service = CombatService(
+            self.db_manager, self.cultivation_service
+        )
+        self.inventory_service = InventoryService(
+            self.db_manager, self.config_manager, self.json_data_manager, self.cultivation_service
+        )
+        self.event_service = EventService(self.db_manager, self.json_data_manager, self.cultivation_service)
+        self.cultivation_service.event_service = self.event_service
         # 初始化签到服务
-        self.checkin_service = CheckinService(self.db_manager, self.config_manager)
+        self.checkin_service = CheckinService(self.db_manager, self.config_manager, self.cultivation_service)
         # 初始化通知服务
         self.notification_service = NotificationService(
             self.db_manager, self.player_service, self.context, self.config_manager
         )
         # 初始化深度闭关服务
         self.deep_seclusion_service = DeepSeclusionService(
-            self.db_manager, self.config_manager
+            self.db_manager, self.config_manager, self.cultivation_service
         )
         # 初始化突破服务
         self.breakthrough_service = BreakthroughService(
-            self.db_manager, self.config_manager
+            self.db_manager, self.config_manager, self.cultivation_service
         )
         # 初始化万宝楼服务
-        self.market_service = MarketService(self.db_manager, self.config_manager)
+        self.market_service = MarketService(
+            self.db_manager, self.config_manager, self.inventory_service
+        )
         # 初始化API层
-        self.player_api = PlayerAPI(self.player_service, self.deep_seclusion_service)
+        self.player_api = PlayerAPI(
+            self.player_service, self.deep_seclusion_service, self.cultivation_service
+        )
         self.item_api = ItemAPI(self.inventory_service, self.player_service)
         self.cultivation_api = CultivationAPI(
             self.cultivation_service, self.player_service

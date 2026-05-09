@@ -17,18 +17,18 @@ from ..utils import calc_battle_attrs
 
 if TYPE_CHECKING:
     from ..config import ConfigManager
+    from .cultivation_service import CultivationService
 
 
 class PlayerService:
     """玩家服务类"""
 
-    def __init__(self, db_manager: DatabaseManager, config_manager: "ConfigManager"):
+    def __init__(self, db_manager: DatabaseManager, config_manager: "ConfigManager", cultivation_service: "CultivationService" = None):
         self.db = db_manager
         self.config_manager = config_manager
+        self.cultivation_service = cultivation_service
         self._register_timestamps: dict[str, float] = {}
-        # 被动增长修为冷却缓存 {user_id: timestamp}
         self._passive_exp_cooldowns: dict[str, float] = {}
-        # 被动增长修为每日累计 {user_id: date_str}
         self._passive_exp_daily: dict[str, int] = {}
 
     def _validate_username(self, username: str) -> str | None:
@@ -637,17 +637,22 @@ class PlayerService:
 
         # 获取玩家当前境界和修为
         player = await self.db.fetch_one(
-            "SELECT p.*, r.level as realm_level, r.name as realm_name, r.experience_required as realm_exp_required "
-            "FROM players p JOIN realms r ON p.realm_id = r.id WHERE p.id = ?",
+            "SELECT * FROM players WHERE id = ?",
             (player_id,),
         )
         if not player:
             return {"gained": 0, "message": "", "needs_breakthrough": False}
 
+        realm_exp_required = 0
+        realm_name = "未知"
+        if self.cultivation_service:
+            realm = await self.cultivation_service.get_realm_by_id(player["realm_id"])
+            if realm:
+                realm_exp_required = realm.experience_required
+                realm_name = realm.name
+
         current_exp = player["experience"]
         temp_exp = player.get("temp_experience", 0)
-        realm_exp_required = player["realm_exp_required"]
-        realm_name = player["realm_name"]
 
         # 计算实际可增加的修为（受境界上限控制）
         new_exp = current_exp + actual_exp_gain
@@ -753,14 +758,14 @@ class PlayerService:
         """
         if category == "realm":
             # 按境界等级降序，同境界按修为降序
+            realms_cache = {r.level: r.name for r in await self.cultivation_service.get_all_realms()} if self.cultivation_service else {}
             rows = await self.db.fetch_all(
                 """
-                SELECT p.username, r.name as realm_name, p.experience, r.level as realm_level,
-                       p.bone, p.spirit, p.intel, p.str, p.percep, p.luck
-                FROM players p
-                JOIN realms r ON p.realm_id = r.id
-                WHERE p.is_deleted = 0 OR p.is_deleted IS NULL
-                ORDER BY r.level DESC, p.experience DESC
+                SELECT username, experience, realm_level,
+                       bone, spirit, intel, str, percep, luck
+                FROM players
+                WHERE is_deleted = 0 OR is_deleted IS NULL
+                ORDER BY realm_level DESC, experience DESC
                 LIMIT ?
                 """,
                 (limit,),
@@ -769,7 +774,7 @@ class PlayerService:
                 {
                     "rank": i + 1,
                     "username": row["username"],
-                    "realm_name": row["realm_name"],
+                    "realm_name": realms_cache.get(row["realm_level"], "未知"),
                     "experience": row["experience"],
                     "realm_level": row["realm_level"],
                     "total_attrs": (
@@ -786,11 +791,11 @@ class PlayerService:
 
         elif category == "chat":
             # 按发言次数降序
+            realms_cache = {r.level: r.name for r in await self.cultivation_service.get_all_realms()} if self.cultivation_service else {}
             rows = await self.db.fetch_all(
                 """
-                SELECT p.username, r.name as realm_name, COUNT(c.id) as chat_count
+                SELECT p.username, p.realm_level, COUNT(c.id) as chat_count
                 FROM players p
-                JOIN realms r ON p.realm_id = r.id
                 LEFT JOIN chat_logs c ON p.id = c.player_id
                 WHERE p.is_deleted = 0 OR p.is_deleted IS NULL
                 GROUP BY p.id
@@ -803,7 +808,7 @@ class PlayerService:
                 {
                     "rank": i + 1,
                     "username": row["username"],
-                    "realm_name": row["realm_name"],
+                    "realm_name": realms_cache.get(row["realm_level"], "未知"),
                     "chat_count": row["chat_count"],
                 }
                 for i, row in enumerate(rows)
@@ -811,13 +816,13 @@ class PlayerService:
 
         elif category == "wealth":
             # 按灵石数量降序
+            realms_cache = {r.level: r.name for r in await self.cultivation_service.get_all_realms()} if self.cultivation_service else {}
             rows = await self.db.fetch_all(
                 """
-                SELECT p.username, r.name as realm_name, p.spirit_stone
-                FROM players p
-                JOIN realms r ON p.realm_id = r.id
-                WHERE p.is_deleted = 0 OR p.is_deleted IS NULL
-                ORDER BY p.spirit_stone DESC
+                SELECT username, realm_level, spirit_stone
+                FROM players
+                WHERE is_deleted = 0 OR is_deleted IS NULL
+                ORDER BY spirit_stone DESC
                 LIMIT ?
                 """,
                 (limit,),
@@ -826,7 +831,7 @@ class PlayerService:
                 {
                     "rank": i + 1,
                     "username": row["username"],
-                    "realm_name": row["realm_name"],
+                    "realm_name": realms_cache.get(row["realm_level"], "未知"),
                     "spirit_stone": row["spirit_stone"],
                 }
                 for i, row in enumerate(rows)

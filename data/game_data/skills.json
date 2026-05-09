@@ -1,0 +1,112 @@
+[
+  {
+    "id": "skill_001",
+    "name": "基础吐纳术",
+    "description": "最基础的修炼功法",
+    "skill_type": "cultivation",
+    "realm_requirement": "realm_001",
+    "experience_gain": 10,
+    "damage": 0,
+    "cooldown": 0,
+    "defense_bonus": 0
+  },
+  {
+    "id": "skill_002",
+    "name": "劈空掌",
+    "description": "基础攻击技能",
+    "skill_type": "combat",
+    "realm_requirement": "realm_001",
+    "experience_gain": 0,
+    "damage": 15,
+    "cooldown": 3,
+    "defense_bonus": 0
+  },
+  {
+    "id": "skill_003",
+    "name": "护体灵光",
+    "description": "基础防御技能",
+    "skill_type": "combat",
+    "realm_requirement": "realm_001",
+    "experience_gain": 0,
+    "damage": 0,
+    "cooldown": 5,
+    "defense_bonus": 10
+  },
+  {
+    "id": "skill_004",
+    "name": "引气入体",
+    "description": "引导灵气入体，加速修炼",
+    "skill_type": "cultivation",
+    "realm_requirement": "realm_002",
+    "experience_gain": 20,
+    "damage": 0,
+    "cooldown": 0,
+    "defense_bonus": 0
+  },
+  {
+    "id": "skill_005",
+    "name": "灵气斩",
+    "description": "凝聚灵气斩击敌人",
+    "skill_type": "combat",
+    "realm_requirement": "realm_003",
+    "experience_gain": 0,
+    "damage": 30,
+    "cooldown": 4,
+    "defense_bonus": 0
+  },
+  {
+    "id": "skill_006",
+    "name": "聚灵诀",
+    "description": "聚集灵气，提升修炼效率",
+    "skill_type": "cultivation",
+    "realm_requirement": "realm_005",
+    "experience_gain": 50,
+    "damage": 0,
+    "cooldown": 0,
+    "defense_bonus": 0
+  },
+  {
+    "id": "skill_007",
+    "name": "金身诀",
+    "description": "锻造金身，提升防御",
+    "skill_type": "passive",
+    "realm_requirement": "realm_006",
+    "experience_gain": 0,
+    "damage": 0,
+    "cooldown": 0,
+    "defense_bonus": 20
+  },
+  {
+    "id": "skill_008",
+    "name": "金丹真火",
+    "description": "金丹期才能施展的真火攻击",
+    "skill_type": "combat",
+    "realm_requirement": "realm_010",
+    "experience_gain": 0,
+    "damage": 80,
+    "cooldown": 6,
+    "defense_bonus": 0
+  },
+  {
+    "id": "skill_009",
+    "name": "元婴出窍",
+    "description": "元婴期神通，神识攻击",
+    "skill_type": "combat",
+    "realm_requirement": "realm_014",
+    "experience_gain": 0,
+    "damage": 120,
+    "cooldown": 8,
+    "defense_bonus": 0
+  },
+  {
+    "id": "skill_010",
+    "name": "化神诀",
+    "description": "化神期修炼功法",
+    "skill_type": "cultivation",
+    "realm_requirement": "realm_018",
+    "experience_gain": 200,
+    "damage": 0,
+    "cooldown": 0,
+    "defense_bonus": 0
+  }
+]

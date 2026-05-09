@@ -14,18 +14,20 @@ class PlayerAPI:
         self,
         player_service: PlayerService,
         deep_seclusion_service: DeepSeclusionService = None,
+        cultivation_service=None,
     ):
         self.player_service = player_service
         self.deep_seclusion_service = deep_seclusion_service
+        self.cultivation_service = cultivation_service
 
     async def create_player(self, user_id: str, username: str) -> str:
         try:
             player = await self.player_service.create_player(user_id, username)
-            realm = await self.player_service.db.fetch_one(
-                "SELECT name FROM realms WHERE id = ?",
-                (player.realm_id,),
-            )
-            realm_name = realm["name"] if realm else "未知"
+            realm_name = "凡人"
+            if self.cultivation_service:
+                realm = await self.cultivation_service.get_realm_by_id(player.realm_id)
+                if realm:
+                    realm_name = realm.name
             return (
                 f"注册成功！欢迎 {username} 进入修仙世界！\n"
                 f"当前境界：{realm_name}\n"
@@ -44,19 +46,19 @@ class PlayerAPI:
         if error:
             return error
 
-        realm = await self.player_service.db.fetch_one(
-            "SELECT name, level FROM realms WHERE id = ?",
-            (player_dict["realm_id"],),
-        )
-        realm_name = realm["name"] if realm else "未知"
-        realm_level = realm["level"] if realm else 1
+        realm_name = "凡人"
+        realm_level = 1
+        if self.cultivation_service:
+            realm = await self.cultivation_service.get_realm_by_id(player_dict["realm_id"])
+            if realm:
+                realm_name = realm.name
+                realm_level = realm.level
 
-        # 获取下一境界所需修为作为显示分母
-        next_realm = await self.player_service.db.fetch_one(
-            "SELECT experience_required FROM realms WHERE level > ? ORDER BY level ASC LIMIT 1",
-            (realm_level,),
-        )
-        exp_required = next_realm["experience_required"] if next_realm else 0
+        exp_required = 0
+        if self.cultivation_service:
+            next_realm = await self.cultivation_service.get_next_realm(realm_level)
+            if next_realm:
+                exp_required = next_realm.experience_required
 
         battle_attrs = calc_battle_attrs(
             level=realm_level,
