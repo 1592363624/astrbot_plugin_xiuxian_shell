@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 from astrbot.api import logger
 
 from ..database import DatabaseManager
+from ..utils import bj_now_iso, bj_today_str
 
 if TYPE_CHECKING:
     from ..config import ConfigManager
@@ -126,7 +127,7 @@ class CheckinService:
         if not last_record:
             return 1
 
-        today = date.today()
+        today = date.fromisoformat(bj_today_str())
         last_date = date.fromisoformat(last_record["checkin_date"])
         yesterday = today - timedelta(days=1)
 
@@ -149,7 +150,7 @@ class CheckinService:
         Returns:
             Dict[str, Any]: 签到结果，包含 success、message、exp_reward、consecutive_days 等
         """
-        today_str = date.today().isoformat()
+        today_str = bj_today_str()
 
         # 检查今天是否已签到
         existing = await self.db.fetch_one(
@@ -176,12 +177,15 @@ class CheckinService:
             (record_id, player_id, today_str, consecutive_days, exp_reward),
         )
 
-        # 发放修为奖励
-        await self.db.execute(
-            "UPDATE players SET experience = experience + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (exp_reward, player_id),
-        )
-        await self.db.commit()
+        # 发放修为奖励，通过统一入口处理截断和溢出
+        if self.cultivation_service:
+            await self.cultivation_service.add_experience(player_id, exp_reward)
+        else:
+            await self.db.execute(
+                "UPDATE players SET experience = experience + ?, updated_at = ? WHERE id = ?",
+                (exp_reward, bj_now_iso(), player_id),
+            )
+            await self.db.commit()
 
         logger.info(
             f"玩家 {player_id} 签到成功，连续 {consecutive_days} 天，获得 {exp_reward} 修为"
@@ -220,7 +224,7 @@ class CheckinService:
         Returns:
             Dict[str, Any]: 签到状态信息
         """
-        today_str = date.today().isoformat()
+        today_str = bj_today_str()
 
         # 查询今日签到记录
         today_record = await self.db.fetch_one(

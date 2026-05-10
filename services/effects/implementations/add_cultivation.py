@@ -41,14 +41,19 @@ class AddCultivationEffect(BaseEffect):
                 error_msg="修为增加数值配置错误",
             )
 
-        await db_manager.execute(
-            "UPDATE players SET experience = experience + ? WHERE id = ?",
-            (cultivation_value, player_id),
-        )
-        await db_manager.commit()
+        if cultivation_service:
+            exp_result = await cultivation_service.add_experience(player_id, cultivation_value)
+            actual = exp_result["actual_change"]
+        else:
+            await db_manager.execute(
+                "UPDATE players SET experience = experience + ? WHERE id = ?",
+                (cultivation_value, player_id),
+            )
+            await db_manager.commit()
+            actual = cultivation_value
 
         return EffectResult(
             success=True,
-            effect_desc=f"获得{cultivation_value}点修为",
-            effect_params={"cultivation_value": cultivation_value},
+            effect_desc=f"获得{actual}点修为",
+            effect_params={"cultivation_value": actual},
         )

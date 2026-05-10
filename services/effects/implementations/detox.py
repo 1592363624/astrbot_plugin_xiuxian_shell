@@ -34,12 +34,12 @@ class DetoxEffect(BaseEffect):
         Returns:
             EffectResult: 触发结果
         """
-        from datetime import datetime
+        from datetime import datetime, timedelta, timezone
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone(timedelta(hours=8)))
         result = await db_manager.fetch_one(
             "SELECT COALESCE(SUM(toxicity_value), 0) as total FROM pill_toxicity_records WHERE player_id = ? AND expires_at > ?",
-            (player_id, now.isoformat()),
+            (player_id, now.replace(tzinfo=None).isoformat()),
         )
         total_toxicity = result["total"] if result else 0
 

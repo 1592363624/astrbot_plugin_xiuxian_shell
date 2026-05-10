@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 from astrbot.api import logger
 
 from ..database import DatabaseManager
+from ..utils import bj_now, bj_now_iso
 
 if TYPE_CHECKING:
     from ..config import ConfigManager
@@ -345,12 +346,12 @@ class MarketService:
         if new_remaining == 0:
             await self.db.execute(
                 "UPDATE market_listings SET remaining_quantity = ?, status = 'completed', updated_at = ? WHERE id = ?",
-                (new_remaining, datetime.now().isoformat(), listing_id),
+                (new_remaining, bj_now_iso(), listing_id),
             )
         else:
             await self.db.execute(
                 "UPDATE market_listings SET remaining_quantity = ?, updated_at = ? WHERE id = ?",
-                (new_remaining, datetime.now().isoformat(), listing_id),
+                (new_remaining, bj_now_iso(), listing_id),
             )
 
         item_id = listing["item_id"]
@@ -416,7 +417,7 @@ class MarketService:
 
         await self.db.execute(
             "UPDATE market_listings SET status = 'cancelled', remaining_quantity = 0, updated_at = ? WHERE id = ?",
-            (datetime.now().isoformat(), listing_id),
+            (bj_now_iso(), listing_id),
         )
         await self.db.commit()
 

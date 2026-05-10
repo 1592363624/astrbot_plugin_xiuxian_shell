@@ -8,6 +8,7 @@ import random
 from typing import TYPE_CHECKING, Any
 
 from ..database import DatabaseManager
+from ..utils import bj_now_iso
 from ..utils.attributes import calc_battle_attrs
 
 if TYPE_CHECKING:
@@ -155,24 +156,35 @@ class CombatService:
             exp_reward = random.randint(20, 50) * monster_level
             stone_reward = random.randint(10, 30) * monster_level
 
+            # 更新生命值和灵石，修为通过统一入口处理截断
             await self.db.execute(
                 """UPDATE players
                 SET health = ?,
-                    experience = experience + ?,
                     spirit_stone = spirit_stone + ?,
-                    updated_at = CURRENT_TIMESTAMP
+                    updated_at = ?
                 WHERE id = ?""",
-                (player_hp, exp_reward, stone_reward, player["id"]),
+                (player_hp, stone_reward, bj_now_iso(), player["id"]),
             )
             await self.db.commit()
+
+            if self.cultivation_service:
+                exp_result = await self.cultivation_service.add_experience(player["id"], exp_reward)
+                actual_exp = exp_result["actual_change"]
+            else:
+                await self.db.execute(
+                    "UPDATE players SET experience = experience + ? WHERE id = ?",
+                    (exp_reward, player["id"]),
+                )
+                await self.db.commit()
+                actual_exp = exp_reward
 
             return {
                 "success": True,
                 "monster_name": monster["name"],
                 "damage_taken": player["health"] - player_hp,
-                "exp_reward": exp_reward,
+                "exp_reward": actual_exp,
                 "stone_reward": stone_reward,
-                "message": f"你击败了【{monster['name']}】！获得 {exp_reward} 修为和 {stone_reward} 灵石",
+                "message": f"你击败了【{monster['name']}】！获得 {actual_exp} 修为和 {stone_reward} 灵石",
             }
         else:
             await self.db.execute(

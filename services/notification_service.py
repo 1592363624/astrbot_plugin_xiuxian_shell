@@ -11,6 +11,7 @@ from astrbot.core.message.components import Plain
 from astrbot.core.message.message_event_result import MessageChain
 
 from ..database import DatabaseManager
+from ..utils import bj_now_iso
 
 if TYPE_CHECKING:
     from astrbot.api.star import Context
@@ -66,9 +67,9 @@ class NotificationService:
         if existing:
             await self.db.execute(
                 """UPDATE player_sessions
-                SET unified_msg_origin = ?, platform_name = ?, updated_at = CURRENT_TIMESTAMP
+                SET unified_msg_origin = ?, platform_name = ?, updated_at = ?
                 WHERE user_id = ?""",
-                (unified_msg_origin, platform_name, user_id),
+                (unified_msg_origin, platform_name, bj_now_iso(), user_id),
             )
         else:
             await self.db.execute(
@@ -545,8 +546,8 @@ class NotificationService:
             是否操作成功
         """
         cursor = await self.db.execute(
-            "UPDATE scheduled_notifications SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (1 if enabled else 0, schedule_id),
+            "UPDATE scheduled_notifications SET enabled = ?, updated_at = ? WHERE id = ?",
+            (1 if enabled else 0, bj_now_iso(), schedule_id),
         )
         await self.db.commit()
         return cursor.rowcount > 0
@@ -588,8 +589,8 @@ class NotificationService:
         values = list(updates.values()) + [schedule_id]
 
         await self.db.execute(
-            f"UPDATE scheduled_notifications SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            values,
+            f"UPDATE scheduled_notifications SET {set_clause}, updated_at = ? WHERE id = ?",
+            values + [bj_now_iso(), schedule_id],
         )
         await self.db.commit()
 
@@ -774,9 +775,9 @@ class NotificationService:
 
         await self.db.execute(
             """UPDATE scheduled_notifications
-            SET last_run_at = CURRENT_TIMESTAMP, run_count = run_count + 1, updated_at = CURRENT_TIMESTAMP
+            SET last_run_at = ?, run_count = run_count + 1, updated_at = ?
             WHERE id = ?""",
-            (schedule_id,),
+            (bj_now_iso(), bj_now_iso(), schedule_id),
         )
         await self.db.commit()
 

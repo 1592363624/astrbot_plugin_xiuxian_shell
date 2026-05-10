@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 from astrbot.api import logger
 
 from ..database import DatabaseManager
-from ..utils import utc_to_local
+from ..utils import bj_now, bj_now_iso, bj_today_str, ensure_bj, to_db_iso
 
 if TYPE_CHECKING:
     from ..config import ConfigManager
@@ -61,10 +61,10 @@ class DeepSeclusionService:
             record_id = record["id"]
             player_id = record["player_id"]
             duration_hours = record["planned_duration_hours"]
-            ended_at = datetime.fromisoformat(record["ended_at"])
+            ended_at = ensure_bj(datetime.fromisoformat(record["ended_at"]))
 
             # 检查是否已过期（Bot离线期间闭关已结束）
-            now = datetime.utcnow()
+            now = bj_now()
             if now >= ended_at:
                 logger.info(f"深度闭关记录 {record_id} 在离线期间已到期，立即执行模拟")
                 dao_heart = await self._check_dao_heart_broken(player_id)
@@ -185,9 +185,9 @@ class DeepSeclusionService:
             (player_id,),
         )
         if last_record and last_record["ended_at"]:
-            ended_at = datetime.fromisoformat(last_record["ended_at"])
+            ended_at = ensure_bj(datetime.fromisoformat(last_record["ended_at"]))
             cooldown_until = ended_at + timedelta(hours=cooldown_hours)
-            now = datetime.utcnow()
+            now = bj_now()
             if now < cooldown_until:
                 remaining = cooldown_until - now
                 hours = int(remaining.total_seconds() // 3600)
@@ -204,7 +204,7 @@ class DeepSeclusionService:
         duration_hours = await self._get_death_penalty_config_int(
             "deep_seclusion_duration_hours", 8
         )
-        now = datetime.utcnow()
+        now = bj_now()
         ended_at = now + timedelta(hours=duration_hours)
         record_id = str(uuid.uuid4())
         await self.db.execute(
@@ -214,8 +214,8 @@ class DeepSeclusionService:
             (
                 record_id,
                 player_id,
-                now.isoformat(),
-                ended_at.isoformat(),
+                to_db_iso(now),
+                to_db_iso(ended_at),
                 duration_hours,
             ),
         )
@@ -228,7 +228,7 @@ class DeepSeclusionService:
             )
         )
 
-        ended_at_local = utc_to_local(ended_at)
+        ended_at_local = ended_at
         message_lines = [
             "【深度闭关】",
             f"你进入洞府，开启了一次长达{duration_hours}小时的深度闭关。",
@@ -266,7 +266,7 @@ class DeepSeclusionService:
             dao_heart_penalty: 是否有道心破碎惩罚
             ended_at: 预计结束时间
         """
-        now = datetime.utcnow()
+        now = bj_now()
         wait_seconds = (ended_at - now).total_seconds()
         if wait_seconds > 0:
             logger.info(
@@ -372,7 +372,7 @@ class DeepSeclusionService:
             total_exp_change = int(total_exp_change * penalty_rate)
 
         # 更新记录为已完成（但不结算）
-        now = datetime.utcnow()
+        now = bj_now()
         await self.db.execute(
             """UPDATE deep_seclusion_records
             SET total_cycles = ?,
@@ -389,7 +389,7 @@ class DeepSeclusionService:
                 failure_count,
                 possession_count,
                 total_exp_change,
-                now.isoformat(),
+                to_db_iso(now),
                 record_id,
             ),
         )
@@ -419,8 +419,8 @@ class DeepSeclusionService:
             (player_id,),
         )
         if ongoing:
-            started_at = datetime.fromisoformat(ongoing["started_at"])
-            now = datetime.utcnow()
+            started_at = ensure_bj(datetime.fromisoformat(ongoing["started_at"]))
+            now = bj_now()
             elapsed = now - started_at
             elapsed_hours = elapsed.total_seconds() / 3600
             planned = ongoing["planned_duration_hours"]
@@ -457,9 +457,9 @@ class DeepSeclusionService:
             (player_id,),
         )
         if last_record and last_record["ended_at"]:
-            ended_at = datetime.fromisoformat(last_record["ended_at"])
+            ended_at = ensure_bj(datetime.fromisoformat(last_record["ended_at"]))
             cooldown_until = ended_at + timedelta(hours=cooldown_hours)
-            now = datetime.utcnow()
+            now = bj_now()
             if now < cooldown_until:
                 remaining = cooldown_until - now
                 hours = int(remaining.total_seconds() // 3600)
@@ -506,8 +506,8 @@ class DeepSeclusionService:
         )
 
         # 重新计算实际收益（基于已过时间的比例）
-        started_at = datetime.fromisoformat(ongoing["started_at"])
-        now = datetime.utcnow()
+        started_at = ensure_bj(datetime.fromisoformat(ongoing["started_at"]))
+        now = bj_now()
         elapsed_hours = (now - started_at).total_seconds() / 3600
         planned_hours = ongoing["planned_duration_hours"]
         progress_ratio = (
@@ -535,15 +535,18 @@ class DeepSeclusionService:
                 total_exp_change = ?,
                 is_settled = 1
             WHERE id = ?""",
-            (now.isoformat(), actual_exp, ongoing["id"]),
+            (to_db_iso(now), actual_exp, ongoing["id"]),
         )
 
-        # 应用修为变化
-        await self.db.execute(
-            "UPDATE players SET experience = MAX(0, experience + ?), updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (actual_exp, player_id),
-        )
-        await self.db.commit()
+        # 应用修为变化，通过统一入口处理截断和溢出
+        if self.cultivation_service:
+            exp_result = await self.cultivation_service.add_experience(player_id, actual_exp)
+        else:
+            await self.db.execute(
+                "UPDATE players SET experience = MAX(0, experience + ?), updated_at = ? WHERE id = ?",
+                (actual_exp, bj_now_iso(), player_id),
+            )
+            await self.db.commit()
 
         message_lines = [
             "【强行出关】",
@@ -585,11 +588,38 @@ class DeepSeclusionService:
 
         total_exp = record["total_exp_change"]
 
-        # 应用修为变化
-        await self.db.execute(
-            "UPDATE players SET experience = MAX(0, experience + ?), updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (total_exp, player_id),
-        )
+        # 获取境界修为上限
+        exp_cap = 0
+        if self.cultivation_service:
+            player = await self.db.fetch_one(
+                "SELECT realm_id FROM players WHERE id = ?", (player_id,)
+            )
+            if player:
+                exp_cap = await self.cultivation_service.get_exp_cap_for_realm(player["realm_id"])
+
+        # 应用修为变化，通过统一入口处理截断和溢出
+        if self.cultivation_service:
+            await self.cultivation_service.add_experience(player_id, total_exp)
+        elif total_exp > 0:
+            await self.db.execute(
+                """
+                UPDATE players
+                SET experience = MAX(0, experience + ?),
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (total_exp, bj_now_iso(), player_id),
+            )
+        else:
+            await self.db.execute(
+                """
+                UPDATE players
+                SET experience = MAX(0, experience + ?),
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (total_exp, bj_now_iso(), player_id),
+            )
 
         # 标记为已结算
         await self.db.execute(
@@ -680,13 +710,13 @@ class DeepSeclusionService:
         self._peace_mode_cooldowns[player_id] = time.time()
 
         # 创建避世状态记录
-        now = datetime.utcnow()
+        now = bj_now()
         state_id = str(uuid.uuid4())
         await self.db.execute(
             """INSERT INTO player_states
             (id, player_id, state_type, started_at, is_active)
             VALUES (?, ?, 'peace_mode', ?, 1)""",
-            (state_id, player_id, now.isoformat()),
+            (state_id, player_id, to_db_iso(now)),
         )
         await self.db.commit()
 
@@ -736,12 +766,12 @@ class DeepSeclusionService:
         # 记录操作时间戳（用于冷却）
         self._peace_mode_cooldowns[player_id] = time.time()
 
-        now = datetime.utcnow()
+        now = bj_now()
         await self.db.execute(
             """UPDATE player_states
             SET is_active = 0, expires_at = ?
             WHERE id = ?""",
-            (now.isoformat(), existing["id"]),
+            (to_db_iso(now), existing["id"]),
         )
         await self.db.commit()
 
@@ -912,20 +942,21 @@ class DeepSeclusionService:
                 health = ?,
                 mp = ?,
                 stamina = ?,
-                updated_at = CURRENT_TIMESTAMP
+                updated_at = ?
             WHERE id = ?""",
             (
                 prev_realm_dict["id"],
                 new_attrs["max_health"],
                 new_attrs["max_mp"],
                 new_attrs["max_stamina"],
+                bj_now_iso(),
                 player_id,
             ),
         )
         await self.db.commit()
 
         return {
-            "old_realm": player["realm_name"],
+            "old_realm": player_realm.name if player_realm else "未知",
             "new_realm": prev_realm_dict["name"],
             "old_level": current_level,
             "new_level": prev_realm_dict["level"],
@@ -1042,7 +1073,7 @@ class DeepSeclusionService:
             "dao_heart_broken_duration_hours", 24
         )
 
-        now = datetime.utcnow()
+        now = bj_now()
         expires_at = now + timedelta(hours=duration_hours)
 
         # 先清除旧的道心破碎状态
@@ -1056,14 +1087,14 @@ class DeepSeclusionService:
             """INSERT INTO player_states
             (id, player_id, state_type, started_at, expires_at, is_active)
             VALUES (?, ?, 'dao_heart_broken', ?, ?, 1)""",
-            (state_id, player_id, now.isoformat(), expires_at.isoformat()),
+            (state_id, player_id, to_db_iso(now), to_db_iso(expires_at)),
         )
         await self.db.commit()
 
         return {
             "state_id": state_id,
             "duration_hours": duration_hours,
-            "expires_at": expires_at.isoformat(),
+            "expires_at": to_db_iso(expires_at),
         }
 
     async def _check_dao_heart_broken(self, player_id: str) -> bool:
@@ -1092,13 +1123,13 @@ class DeepSeclusionService:
         Returns:
             Optional[Dict[str, Any]]: 状态记录，不存在返回None
         """
-        now = datetime.utcnow()
+        now = bj_now()
         row = await self.db.fetch_one(
             """SELECT * FROM player_states
             WHERE player_id = ? AND state_type = ? AND is_active = 1
             AND (expires_at IS NULL OR expires_at > ?)
             ORDER BY created_at DESC LIMIT 1""",
-            (player_id, state_type, now.isoformat()),
+            (player_id, state_type, to_db_iso(now)),
         )
         return dict(row) if row else None
 
@@ -1152,13 +1183,13 @@ class DeepSeclusionService:
         Returns:
             List[Dict[str, Any]]: 状态列表
         """
-        now = datetime.utcnow()
+        now = bj_now()
         rows = await self.db.fetch_all(
             """SELECT * FROM player_states
             WHERE player_id = ? AND is_active = 1
             AND (expires_at IS NULL OR expires_at > ?)
             ORDER BY created_at DESC""",
-            (player_id, now.isoformat()),
+            (player_id, to_db_iso(now)),
         )
         return [dict(r) for r in rows]
 
@@ -1166,11 +1197,11 @@ class DeepSeclusionService:
         """
         清理过期的玩家状态
         """
-        now = datetime.utcnow()
+        now = bj_now()
         await self.db.execute(
             """UPDATE player_states
             SET is_active = 0
             WHERE is_active = 1 AND expires_at IS NOT NULL AND expires_at <= ?""",
-            (now.isoformat(),),
+            (to_db_iso(now),),
         )
         await self.db.commit()

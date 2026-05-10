@@ -3,7 +3,7 @@
 使用物品后临时提升玩家的某项属性（攻击/防御等）
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 import uuid
 
@@ -54,7 +54,7 @@ class AddTempAttributeEffect(BaseEffect):
                 error_msg="属性加成配置错误",
             )
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone(timedelta(hours=8)))
         expires_at = now + timedelta(seconds=duration)
 
         record_id = str(uuid.uuid4())
@@ -66,8 +66,8 @@ class AddTempAttributeEffect(BaseEffect):
                 player_id,
                 f"temp_{attribute_type}",
                 attribute_value,
-                now.isoformat(),
-                expires_at.isoformat(),
+                now.replace(tzinfo=None).isoformat(),
+                expires_at.replace(tzinfo=None).isoformat(),
             ),
         )
         await db_manager.commit()

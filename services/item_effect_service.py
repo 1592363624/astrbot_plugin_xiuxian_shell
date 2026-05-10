@@ -16,6 +16,7 @@ from astrbot.api import logger
 
 from ..database import DatabaseManager
 from ..models import Item
+from ..utils import bj_now, to_db_iso
 from .effects import EffectRegistry, register_all_effects
 
 if TYPE_CHECKING:
@@ -701,6 +702,26 @@ class ItemEffectService:
 
     # ==================== 临时增益管理 ====================
 
+    async def cleanup_expired_buffs(self, player_id: str) -> int:
+        """
+        清理指定玩家的过期临时增益
+
+        Args:
+            player_id: 玩家ID
+
+        Returns:
+            int: 清理的记录数
+        """
+        from datetime import datetime
+
+        now = bj_now()
+        cursor = await self.db.execute(
+            "DELETE FROM temp_buffs WHERE player_id = ? AND expires_at <= ?",
+            (player_id, to_db_iso(now)),
+        )
+        await self.db.commit()
+        return cursor.rowcount if cursor and hasattr(cursor, "rowcount") else 0
+
     async def get_active_buffs(
         self, player_id: str, buff_type: str | None = None
     ) -> list[dict[str, Any]]:
@@ -716,23 +737,23 @@ class ItemEffectService:
         """
         from datetime import datetime
 
-        now = datetime.utcnow()
+        now = bj_now()
         # 清理过期增益
         await self.db.execute(
             "DELETE FROM temp_buffs WHERE player_id = ? AND expires_at <= ?",
-            (player_id, now.isoformat()),
+            (player_id, to_db_iso(now)),
         )
         await self.db.commit()
 
         if buff_type:
             rows = await self.db.fetch_all(
                 "SELECT * FROM temp_buffs WHERE player_id = ? AND buff_type = ? AND expires_at > ?",
-                (player_id, buff_type, now.isoformat()),
+                (player_id, buff_type, to_db_iso(now)),
             )
         else:
             rows = await self.db.fetch_all(
                 "SELECT * FROM temp_buffs WHERE player_id = ? AND expires_at > ?",
-                (player_id, now.isoformat()),
+                (player_id, to_db_iso(now)),
             )
         return [dict(r) for r in rows]
 

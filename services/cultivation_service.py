@@ -17,11 +17,14 @@ from astrbot.api import logger
 
 from ..database import DatabaseManager
 from ..models import Realm, Skill
+from ..utils import bj_now, bj_now_iso, bj_today_str, ensure_bj, to_db_iso
 
 if TYPE_CHECKING:
     from ..config import ConfigManager
     from ..data.json_data_manager import JsonDataManager
+    from .breakthrough_service import BreakthroughService
     from .event_service import EventService
+    from .inventory_service import InventoryService
 
 
 DEFAULT_REALMS_DATA = [
@@ -94,6 +97,8 @@ class CultivationService:
         config_manager: "ConfigManager" = None,
         json_data_manager: "JsonDataManager" = None,
         event_service: "EventService" = None,
+        breakthrough_service: "BreakthroughService" = None,
+        inventory_service: "InventoryService" = None,
     ):
         """
         初始化修炼服务
@@ -103,11 +108,15 @@ class CultivationService:
             config_manager: 配置管理器实例
             json_data_manager: JSON数据管理器实例
             event_service: 事件服务实例(用于闭关奇遇)
+            breakthrough_service: 突破服务实例(用于突破提示差异化)
+            inventory_service: 背包服务实例(用于闭关奇遇物品发放)
         """
         self.db = db_manager
         self.config_manager = config_manager
         self.json_data_manager = json_data_manager
         self.event_service = event_service
+        self._breakthrough_service_ref = breakthrough_service
+        self._inventory_service_ref = inventory_service
         self._realms_cache: dict[str, Realm] = {}
         self._skills_cache: dict[str, Skill] = {}
         self._realms_loaded = False
@@ -180,19 +189,15 @@ class CultivationService:
 
         exp_gain = skill.experience_gain
 
-        await self.db.execute(
-            "UPDATE players SET experience = experience + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (exp_gain, player_id),
-        )
-        await self.db.commit()
+        exp_result = await self.add_experience(player_id, exp_gain)
 
         logger.info(f"玩家 {player_id} 修炼获得 {exp_gain} 修为")
 
         return {
             "success": True,
             "skill_name": skill.name,
-            "exp_gain": exp_gain,
-            "message": f"你修炼了【{skill.name}】，获得 {exp_gain} 点修为",
+            "exp_gain": exp_result["actual_change"],
+            "message": f"你修炼了【{skill.name}】，获得 {exp_result['actual_change']} 点修为",
         }
 
     # ==================== 闭关修炼 ====================
@@ -254,16 +259,13 @@ class CultivationService:
 
         cooldown_minutes = random.randint(cooldown_min, cooldown_max)
 
-        await self.db.execute(
-            "UPDATE players SET experience = MAX(0, experience + ?), updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (exp_change, player_id),
-        )
+        exp_result = await self.add_experience(player_id, exp_change)
 
         encounter_result = None
         if random.random() < encounter_prob:
             encounter_result = await self._trigger_seclusion_encounter(player_id)
 
-        now = datetime.utcnow()
+        now = bj_now()
         cooldown_until = now + timedelta(minutes=cooldown_minutes)
 
         record_id = str(uuid.uuid4())
@@ -278,16 +280,16 @@ class CultivationService:
                 exp_change,
                 encounter_result.get("event_id") if encounter_result else None,
                 cooldown_minutes,
-                now.isoformat(),
-                cooldown_until.isoformat(),
+                to_db_iso(now),
+                to_db_iso(cooldown_until),
             ),
         )
         await self.db.commit()
 
-        updated_player = await self.db.fetch_one(
-            "SELECT experience FROM players WHERE id = ?", (player_id,)
-        )
-        current_exp = updated_player["experience"] if updated_player else 0
+        # 查询更新后的实际修为值
+        current_exp = exp_result["current_exp"]
+        temp_exp = exp_result["temp_exp"]
+        overflow = exp_result["overflow"]
 
         result_map = {
             "success": "【闭关成功】",
@@ -334,6 +336,7 @@ class CultivationService:
             "result_type": result_type,
             "exp_change": exp_change,
             "current_exp": current_exp,
+            "overflow": overflow,
             "realm_name": current_realm.name,
             "cooldown_minutes": cooldown_minutes,
             "encounter": encounter_result,
@@ -357,8 +360,8 @@ class CultivationService:
         if not record or not record["cooldown_until"]:
             return 0
 
-        cooldown_until = datetime.fromisoformat(record["cooldown_until"])
-        now = datetime.utcnow()
+        cooldown_until = ensure_bj(datetime.fromisoformat(record["cooldown_until"]))
+        now = bj_now()
         if now >= cooldown_until:
             return 0
 
@@ -392,9 +395,10 @@ class CultivationService:
 
                     reward_message = ""
                     if event_reward_type == "item" and event_reward_value:
-                        from ..services import InventoryService
-
-                        inventory_svc = InventoryService(self.db, self.config_manager, self.json_data_manager)
+                        inventory_svc = self._inventory_service_ref
+                        if not inventory_svc:
+                            from ..services import InventoryService
+                            inventory_svc = InventoryService(self.db, self.config_manager, self.json_data_manager)
                         item = await inventory_svc.get_item_by_id(str(event_reward_value))
                         if item:
                             await inventory_svc.add_item(player_id, item.id, 1)
@@ -410,10 +414,7 @@ class CultivationService:
                         reward_message = f"{event_desc}，获得{value}灵石！"
                     elif event_reward_type == "experience":
                         value = event_reward_value
-                        await self.db.execute(
-                            "UPDATE players SET experience = experience + ? WHERE id = ?",
-                            (value, player_id),
-                        )
+                        await self.add_experience(player_id, value)
                         reward_message = f"{event_desc}，额外获得{value}点修为！"
 
                     return {
@@ -436,9 +437,10 @@ class CultivationService:
 
                     reward_message = ""
                     if event_data["reward_type"] == "item" and event_data["reward_value"]:
-                        from ..services import InventoryService
-
-                        inventory_svc = InventoryService(self.db, self.config_manager, self.json_data_manager)
+                        inventory_svc = self._inventory_service_ref
+                        if not inventory_svc:
+                            from ..services import InventoryService
+                            inventory_svc = InventoryService(self.db, self.config_manager, self.json_data_manager)
                         item = await inventory_svc.get_item_by_id(
                             str(event_data["reward_value"])
                         )
@@ -456,10 +458,7 @@ class CultivationService:
                         reward_message = f"{event_desc}，获得{value}灵石！"
                     elif event_data["reward_type"] == "experience":
                         value = event_data["reward_value"]
-                        await self.db.execute(
-                            "UPDATE players SET experience = experience + ? WHERE id = ?",
-                            (value, player_id),
-                        )
+                        await self.add_experience(player_id, value)
                         reward_message = f"{event_desc}，额外获得{value}点修为！"
                     else:
                         reward_message = f"{event_desc}"
@@ -517,7 +516,14 @@ class CultivationService:
 
     async def breakthrough(self, player_id: str) -> dict[str, Any]:
         """
-        尝试境界突破
+        尝试境界突破（已废弃，请使用 BreakthroughService）
+
+        此方法不处理突破条件类型（auto/manual），不重置修为为0，
+        且与 BreakthroughService 存在逻辑重复。保留仅为向后兼容。
+
+        .. deprecated::
+            使用 BreakthroughService.try_auto_breakthrough() 或
+            BreakthroughService.try_manual_breakthrough() 替代。
 
         Args:
             player_id: 玩家ID
@@ -525,6 +531,12 @@ class CultivationService:
         Returns:
             Dict[str, Any]: 突破结果
         """
+        import warnings
+        warnings.warn(
+            "CultivationService.breakthrough() 已废弃，请使用 BreakthroughService",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         player = await self.db.fetch_one(
             "SELECT * FROM players WHERE id = ?", (player_id,)
         )
@@ -571,13 +583,14 @@ class CultivationService:
                     health = ?,
                     mp = ?,
                     stamina = ?,
-                    updated_at = CURRENT_TIMESTAMP
+                    updated_at = ?
                 WHERE id = ?""",
                 (
                     next_realm.id,
                     new_attrs["max_health"],
                     new_attrs["max_mp"],
                     new_attrs["max_stamina"],
+                    bj_now_iso(),
                     player_id,
                 ),
             )
@@ -594,11 +607,7 @@ class CultivationService:
             }
         else:
             exp_loss = int(next_realm.experience_required * 0.1)
-            await self.db.execute(
-                "UPDATE players SET experience = MAX(0, experience - ?), updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                (exp_loss, player_id),
-            )
-            await self.db.commit()
+            await self.add_experience(player_id, -exp_loss)
 
             return {
                 "success": False,
@@ -660,6 +669,94 @@ class CultivationService:
                 return realm
         return None
 
+    async def add_experience(
+        self, player_id: str, exp_change: int
+    ) -> dict[str, Any]:
+        """
+        统一的修为增减入口
+
+        所有修为变化（增加或减少）必须通过此方法执行，确保：
+        1. 修为不会降到0以下
+        2. 修为达到境界上限时截断，溢出部分存入临时修为
+        3. 无上限境界（最高境界）不截断
+
+        此方法为修为修改的唯一入口，遵循规范：
+        "所有的数值的增加和减少尽量用同一个接口,正数表示增加,负数表示减少"
+
+        Args:
+            player_id: 玩家ID
+            exp_change: 修为变化量（正数增加，负数减少）
+
+        Returns:
+            Dict[str, Any]: {
+                "actual_change": int, 实际修为变化量,
+                "overflow": int, 溢出到临时修为的量,
+                "current_exp": int, 变更后的修为值,
+                "temp_exp": int, 变更后的临时修为值,
+                "exp_cap": int, 当前境界修为上限（0表示无上限）
+            }
+        """
+        player = await self.db.fetch_one(
+            "SELECT experience, temp_experience, realm_id FROM players WHERE id = ?",
+            (player_id,),
+        )
+        if not player:
+            return {"actual_change": 0, "overflow": 0, "current_exp": 0, "temp_exp": 0, "exp_cap": 0}
+
+        exp_cap = await self.get_exp_cap_for_realm(player["realm_id"])
+
+        if exp_cap > 0 and exp_change > 0:
+            await self.db.execute(
+                """
+                UPDATE players
+                SET experience = MIN(MAX(0, experience + ?), ?),
+                    temp_experience = temp_experience + MAX(0, experience + ? - ?),
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (exp_change, exp_cap, exp_change, exp_cap, bj_now_iso(), player_id),
+            )
+        elif exp_cap > 0 and exp_change < 0:
+            await self.db.execute(
+                """
+                UPDATE players
+                SET experience = MAX(0, experience + ?),
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (exp_change, bj_now_iso(), player_id),
+            )
+        else:
+            await self.db.execute(
+                """
+                UPDATE players
+                SET experience = MAX(0, experience + ?),
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (exp_change, bj_now_iso(), player_id),
+            )
+        await self.db.commit()
+
+        updated = await self.db.fetch_one(
+            "SELECT experience, temp_experience FROM players WHERE id = ?",
+            (player_id,),
+        )
+        current_exp = updated["experience"] if updated else 0
+        temp_exp = updated.get("temp_experience", 0) if updated else 0
+
+        old_exp = player["experience"]
+        actual_change = current_exp - old_exp
+        overflow = max(0, old_exp + exp_change - exp_cap) if exp_cap > 0 and exp_change > 0 else 0
+
+        return {
+            "actual_change": actual_change,
+            "overflow": overflow,
+            "current_exp": current_exp,
+            "temp_exp": temp_exp,
+            "exp_cap": exp_cap,
+        }
+
     async def get_exp_cap_for_realm(self, realm_id: str) -> int:
         """
         获取指定境界的修为上限
@@ -680,6 +777,154 @@ class CultivationService:
         if next_realm:
             return next_realm.experience_required
         return 0
+
+    async def check_breakthrough_prompt(self, player_id: str) -> dict[str, Any]:
+        """
+        统一检查玩家是否满足突破条件，并返回提示信息
+
+        此方法为突破提示的唯一入口，在玩家每次发言时由 on_message 调用，
+        确保无论修为通过何种途径获得（闭关、被动、奇遇、丹药等），
+        都能正确触发突破提示。
+
+        每天仅提示一次，避免重复打扰。
+
+        Args:
+            player_id: 玩家ID
+
+        Returns:
+            Dict[str, Any]: {
+                "needs_breakthrough": bool, 是否需要突破,
+                "prompt_message": str, 提示消息（空字符串表示无需提示或今日已提示）,
+                "realm_name": str, 当前境界名称,
+                "exp_cap": int, 修为上限,
+                "current_exp": int, 当前修为
+            }
+        """
+        player = await self.db.fetch_one(
+            "SELECT experience, realm_id, last_breakthrough_prompt FROM players WHERE id = ?",
+            (player_id,),
+        )
+        if not player:
+            return {"needs_breakthrough": False, "prompt_message": "", "realm_name": "", "exp_cap": 0, "current_exp": 0}
+
+        current_exp = player["experience"]
+        realm_id = player["realm_id"]
+
+        realm = await self.get_realm_by_id(realm_id)
+        if not realm:
+            return {"needs_breakthrough": False, "prompt_message": "", "realm_name": "", "exp_cap": 0, "current_exp": current_exp}
+
+        exp_cap = await self.get_exp_cap_for_realm(realm_id)
+        realm_name = realm.name
+
+        # 判断是否达到突破条件
+        needs_breakthrough = exp_cap > 0 and current_exp >= exp_cap
+        if not needs_breakthrough:
+            return {"needs_breakthrough": False, "prompt_message": "", "realm_name": realm_name, "exp_cap": exp_cap, "current_exp": current_exp, "condition_type": "none"}
+
+        # 检查今天是否已提示过（使用本地时区判断"每日"边界）
+        now = bj_now()
+        today_str = bj_today_str()
+        last_prompt = player.get("last_breakthrough_prompt")
+        if last_prompt:
+            last_prompt_dt = ensure_bj(datetime.fromisoformat(last_prompt))
+            last_prompt_local = last_prompt_dt
+            if last_prompt_local.strftime("%Y-%m-%d") == today_str:
+                # 今日已提示，仍需返回 condition_type 供 on_message 判断是否尝试自动突破
+                condition_info = await self._get_breakthrough_condition_hint(
+                    (await self.get_next_realm(realm.level)).id if await self.get_next_realm(realm.level) else None
+                )
+                condition_type = "manual" if condition_info["is_manual"] else ("auto" if condition_info["has_auto_items"] else "none")
+                return {"needs_breakthrough": True, "prompt_message": "", "realm_name": realm_name, "exp_cap": exp_cap, "current_exp": current_exp, "condition_type": condition_type}
+
+        # 更新提示时间并生成提示消息
+        await self.db.execute(
+            "UPDATE players SET last_breakthrough_prompt = ? WHERE id = ?",
+            (to_db_iso(now), player_id),
+        )
+        await self.db.commit()
+
+        # 查询临时修为
+        updated = await self.db.fetch_one(
+            "SELECT temp_experience FROM players WHERE id = ?", (player_id,)
+        )
+        temp_exp = updated.get("temp_experience", 0) if updated else 0
+
+        # 根据突破条件类型生成差异化提示
+        next_realm = await self.get_next_realm(realm.level)
+        next_realm_name = next_realm.name if next_realm else "下一境界"
+
+        condition_info = await self._get_breakthrough_condition_hint(next_realm.id if next_realm else None)
+
+        if condition_info["is_manual"]:
+            prompt_message = (
+                f"【突破瓶颈】你的修为已达到【{realm_name}】巅峰（{current_exp}/{exp_cap}），"
+                f"欲突破至【{next_realm_name}】需手动发起突破{condition_info['material_hint']}"
+            )
+        elif condition_info["has_auto_items"]:
+            prompt_message = (
+                f"【突破提示】你的修为已达到【{realm_name}】巅峰（{current_exp}/{exp_cap}），"
+                f"突破至【{next_realm_name}】需{condition_info['material_hint']}，系统将自动突破"
+            )
+        else:
+            prompt_message = (
+                f"【突破提示】你的修为已达到【{realm_name}】巅峰（{current_exp}/{exp_cap}），"
+                f"请使用<突破>指令尝试突破到下一境界！"
+            )
+
+        if temp_exp > 0:
+            prompt_message += f"\n（{temp_exp}点修为已临时存储，突破后不会自动继承）"
+
+        condition_type = "manual" if condition_info["is_manual"] else ("auto" if condition_info["has_auto_items"] else "none")
+
+        return {"needs_breakthrough": True, "prompt_message": prompt_message, "realm_name": realm_name, "exp_cap": exp_cap, "current_exp": current_exp, "condition_type": condition_type}
+
+    async def _get_breakthrough_condition_hint(self, next_realm_id: str | None) -> dict[str, Any]:
+        """
+        获取突破条件的提示信息
+
+        根据下一境界的突破条件类型，返回用于提示玩家的信息。
+        此方法不修改任何数据，仅查询和格式化。
+
+        Args:
+            next_realm_id: 下一境界ID
+
+        Returns:
+            Dict[str, Any]: {
+                "is_manual": bool, 是否为手动突破,
+                "has_auto_items": bool, 自动突破是否有物品需求,
+                "material_hint": str, 材料提示文本
+            }
+        """
+        if not next_realm_id:
+            return {"is_manual": False, "has_auto_items": False, "material_hint": ""}
+
+        try:
+            if not self._breakthrough_service_ref:
+                return {"is_manual": False, "has_auto_items": False, "material_hint": ""}
+
+            condition = await self._breakthrough_service_ref.get_breakthrough_condition(next_realm_id)
+            if not condition:
+                return {"is_manual": False, "has_auto_items": False, "material_hint": ""}
+
+            item_requirements = condition.get("item_requirements", [])
+            if item_requirements:
+                material_names = [
+                    f"【{req['item_name']}】x{req['quantity']}"
+                    for req in item_requirements
+                ]
+                material_hint = f"集齐：{', '.join(material_names)}"
+            else:
+                material_hint = ""
+
+            return {
+                "is_manual": condition["condition_type"] == "manual",
+                "has_auto_items": condition["condition_type"] == "auto" and bool(item_requirements),
+                "material_hint": f"（{material_hint}）" if material_hint else "",
+            }
+        except Exception as e:
+            logger.error(f"获取突破条件提示失败: {e}")
+            return {"is_manual": False, "has_auto_items": False, "material_hint": ""}
 
     async def get_all_realms(self) -> list[Realm]:
         """获取所有境界"""

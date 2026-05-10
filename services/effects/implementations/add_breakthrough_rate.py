@@ -3,7 +3,7 @@
 使用物品后临时提升玩家的突破成功率
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 import uuid
 
@@ -50,7 +50,7 @@ class AddBreakthroughRateEffect(BaseEffect):
 
         # 持续时间默认24小时
         duration_hours = params.get("duration_hours", 24)
-        now = datetime.utcnow()
+        now = datetime.now(timezone(timedelta(hours=8)))
         expires_at = now + timedelta(hours=duration_hours)
 
         record_id = str(uuid.uuid4())
@@ -62,8 +62,8 @@ class AddBreakthroughRateEffect(BaseEffect):
                 player_id,
                 "breakthrough_rate",
                 rate_value,
-                now.isoformat(),
-                expires_at.isoformat(),
+                now.replace(tzinfo=None).isoformat(),
+                expires_at.replace(tzinfo=None).isoformat(),
             ),
         )
         await db_manager.commit()

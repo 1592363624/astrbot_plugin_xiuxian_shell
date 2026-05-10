@@ -142,12 +142,17 @@ class EventService:
             return f"获得 {event.reward_value} 灵石"
 
         elif event.reward_type == "experience":
-            await self.db.execute(
-                "UPDATE players SET experience = experience + ? WHERE id = ?",
-                (event.reward_value, player_id),
-            )
-            await self.db.commit()
-            return f"获得 {event.reward_value} 点修为"
+            if self.cultivation_service:
+                exp_result = await self.cultivation_service.add_experience(player_id, event.reward_value)
+                actual = exp_result["actual_change"]
+            else:
+                await self.db.execute(
+                    "UPDATE players SET experience = experience + ? WHERE id = ?",
+                    (event.reward_value, player_id),
+                )
+                await self.db.commit()
+                actual = event.reward_value
+            return f"获得 {actual} 点修为"
 
         elif event.reward_type == "item":
             return "获得了一些物品"

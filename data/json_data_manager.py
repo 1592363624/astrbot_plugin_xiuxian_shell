@@ -17,13 +17,13 @@ JSON数据管理器
 
 import json
 import uuid
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
 import aiofiles
 
 from astrbot.api import logger
+from ..utils import bj_now_iso
 
 
 class JsonDataManager:
@@ -152,7 +152,7 @@ class JsonDataManager:
         """
         if "id" not in item_data:
             item_data["id"] = f"{data_type[:-1]}_{uuid.uuid4().hex[:8]}"
-        item_data["created_at"] = datetime.utcnow().isoformat()
+        item_data["created_at"] = bj_now_iso()
 
         data = await self.get_all(data_type)
         data.append(item_data)

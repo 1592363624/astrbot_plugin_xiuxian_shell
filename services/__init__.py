@@ -14,6 +14,7 @@ from .item_effect_service import ItemEffectService
 from .market_service import MarketService
 from .notification_service import NotificationService
 from .player_service import PlayerService
+from .player_state_checker import PlayerStateChecker
 
 __all__ = [
     "PlayerService",
@@ -27,4 +28,5 @@ __all__ = [
     "BreakthroughService",
     "MarketService",
     "ItemEffectService",
+    "PlayerStateChecker",
 ]

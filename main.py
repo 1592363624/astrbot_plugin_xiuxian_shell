@@ -8,6 +8,8 @@ from pathlib import Path
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star
+from astrbot.core.message.components import Plain
+from astrbot.core.message.message_event_result import MessageChain
 from astrbot.core.star import StarTools
 from astrbot.core.star.filter.permission import PermissionType
 
@@ -37,6 +39,7 @@ from .services import (
     MarketService,
     NotificationService,
     PlayerService,
+    PlayerStateChecker,
 )
 
 
@@ -77,6 +80,10 @@ class XiuxianPlugin(Star):
         self.breakthrough_service = BreakthroughService(
             self.db_manager, self.config_manager, self.cultivation_service
         )
+        # 回注突破服务引用到修炼服务，用于突破提示差异化
+        self.cultivation_service._breakthrough_service_ref = self.breakthrough_service
+        # 回注背包服务引用到修炼服务，用于闭关奇遇物品发放（避免内联创建InventoryService）
+        self.cultivation_service._inventory_service_ref = self.inventory_service
         # 初始化万宝楼服务
         self.market_service = MarketService(
             self.db_manager, self.config_manager, self.inventory_service
@@ -89,13 +96,21 @@ class XiuxianPlugin(Star):
             self.cultivation_service,
             self.inventory_service,
         )
+        # 初始化玩家状态检查器（统一状态检查入口）
+        self.state_checker = PlayerStateChecker(
+            self.db_manager,
+            cultivation_service=self.cultivation_service,
+            breakthrough_service=self.breakthrough_service,
+            inventory_service=self.inventory_service,
+            item_effect_service=self.item_effect_service,
+        )
         # 初始化API层
         self.player_api = PlayerAPI(
             self.player_service, self.deep_seclusion_service, self.cultivation_service
         )
         self.item_api = ItemAPI(self.inventory_service, self.player_service, self.item_effect_service)
         self.cultivation_api = CultivationAPI(
-            self.cultivation_service, self.player_service
+            self.cultivation_service, self.player_service, self.breakthrough_service
         )
         self.checkin_api = CheckinAPI(self.checkin_service, self.player_service)
         self.notification_api = NotificationAPI(self.notification_service)
@@ -148,6 +163,8 @@ class XiuxianPlugin(Star):
             logger.error(f"修仙后台管理独立服务器启动失败: {e}")
         # 启动定时通知检查任务
         self._start_scheduled_notification_checker()
+        # 启动玩家状态定时tick任务
+        self._start_state_tick()
         logger.info("重生之凡人修仙游戏插件初始化完成")
 
     async def terminate(self):
@@ -160,6 +177,8 @@ class XiuxianPlugin(Star):
             logger.error(f"停止独立管理服务器失败: {e}")
         # 停止定时通知检查任务
         self._stop_scheduled_notification_checker()
+        # 停止玩家状态定时tick任务
+        self._stop_state_tick()
         # 关闭数据库连接
         await self.db_manager.close()
         logger.info("重生之凡人修仙游戏插件已卸载")
@@ -201,6 +220,63 @@ class XiuxianPlugin(Star):
         if self._scheduled_check_task and not self._scheduled_check_task.done():
             self._scheduled_check_task.cancel()
             logger.info("定时通知检查任务已停止")
+
+    # ==================== 玩家状态定时tick ====================
+
+    _state_tick_task = None
+
+    def _start_state_tick(self):
+        """启动玩家状态定时tick后台任务"""
+        import asyncio
+
+        async def _tick_loop():
+            while True:
+                try:
+                    await asyncio.sleep(600)
+                    # 批量清理所有玩家的过期数据
+                    cleaned = await self.state_checker.cleanup_all_expired()
+                    if cleaned > 0:
+                        logger.info(f"玩家状态tick: 清理了{cleaned}条过期记录")
+
+                    # 检查所有玩家的突破状态（生成待通知列表）
+                    notifications = await self.state_checker.tick_all_players()
+                    for notification in notifications:
+                        try:
+                            user_id = notification["user_id"]
+                            for msg in notification.get("messages", []):
+                                try:
+                                    await self.context.send_by_user_id(user_id, msg)
+                                except Exception as e:
+                                    logger.warning(f"tick通知发送失败(用户{user_id}): {e}")
+
+                            # 执行自动突破
+                            if notification.get("needs_auto_breakthrough"):
+                                try:
+                                    auto_break = await self.breakthrough_service.try_auto_breakthrough(
+                                        notification["player_id"]
+                                    )
+                                    if auto_break and auto_break.get("message"):
+                                        try:
+                                            await self.context.send_by_user_id(user_id, auto_break["message"])
+                                        except Exception as e:
+                                            logger.warning(f"tick自动突破通知发送失败(用户{user_id}): {e}")
+                                except Exception as e:
+                                    logger.error(f"tick自动突破失败(玩家{notification['player_id']}): {e}")
+                        except Exception as e:
+                            logger.error(f"tick通知处理失败: {e}")
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    logger.error(f"玩家状态tick循环异常: {e}")
+
+        self._state_tick_task = asyncio.ensure_future(_tick_loop())
+        logger.info("玩家状态定时tick已启动（每10分钟检查一次）")
+
+    def _stop_state_tick(self):
+        """停止玩家状态定时tick后台任务"""
+        if self._state_tick_task and not self._state_tick_task.done():
+            self._state_tick_task.cancel()
+            logger.info("玩家状态定时tick已停止")
 
     # ==================== 封禁检查辅助方法 ====================
 
@@ -259,7 +335,7 @@ class XiuxianPlugin(Star):
         try:
             settle_result = await self.deep_seclusion_api.settle_deep_seclusion(user_id)
             if settle_result:
-                await event.send(settle_result)
+                await event.send(MessageChain([Plain(settle_result)]))
         except Exception as e:
             logger.error(f"深度闭关结算失败: {e}")
 
@@ -278,28 +354,31 @@ class XiuxianPlugin(Star):
                     message_content=event.message_str,
                     group_id=event.get_group_id(),
                 )
-                # 发送修为增长提示和突破提示
                 if passive_result.get("message"):
-                    await event.send(passive_result["message"])
-                if passive_result.get("breakthrough_message"):
-                    await event.send(passive_result["breakthrough_message"])
-
-                # 尝试自动突破（如筑基期等自动突破境界）
-                if passive_result.get("needs_breakthrough"):
-                    try:
-                        auto_break = (
-                            await self.breakthrough_service.try_auto_breakthrough(
-                                player_dict["id"]
-                            )
-                        )
-                        if auto_break and auto_break.get("success"):
-                            await event.send(auto_break["message"])
-                        elif auto_break and auto_break.get("message"):
-                            await event.send(auto_break["message"])
-                    except Exception as e:
-                        logger.error(f"自动突破失败: {e}")
+                    await event.send(MessageChain([Plain(passive_result["message"])]))
             except Exception as e:
                 logger.error(f"被动增长修为失败: {e}")
+
+        # 统一状态检查：突破提示、丹毒清理、buff过期清理、自动突破
+        try:
+            state_result = await self.state_checker.check_player_state(player_dict["id"])
+            for msg in state_result.get("messages", []):
+                await event.send(MessageChain([Plain(msg)]))
+            if state_result.get("needs_auto_breakthrough"):
+                try:
+                    auto_break = await self.breakthrough_service.try_auto_breakthrough(
+                        player_dict["id"]
+                    )
+                    if auto_break and auto_break.get("success"):
+                        await event.send(MessageChain([Plain(auto_break["message"])]))
+                    elif auto_break and auto_break.get("message"):
+                        await event.send(MessageChain([Plain(auto_break["message"])]))
+                except Exception as e:
+                    logger.error(f"自动突破失败: {e}")
+                    await event.send(MessageChain([Plain("【系统】自动突破时发生异常，请联系管理员")]))
+        except Exception as e:
+            logger.error(f"玩家状态检查失败: {e}")
+            await event.send(MessageChain([Plain("【系统】状态检查时发生异常，请联系管理员")]))
 
     # ==================== 命令注册区域 ====================
 
@@ -567,11 +646,23 @@ class XiuxianPlugin(Star):
             yield event.plain_result(error)
             return
 
-        result = await self.breakthrough_service.try_auto_breakthrough(
+        # 先尝试自动突破（无条件或auto条件），若为manual条件则走手动突破
+        auto_result = await self.breakthrough_service.try_auto_breakthrough(
             player_dict["id"]
         )
-        if result:
-            yield event.plain_result(result.get("message", "突破异常"))
+        if auto_result:
+            if auto_result.get("is_manual_condition"):
+                # manual 条件：走手动突破流程（有概率失败）
+                manual_result = await self.breakthrough_service.try_manual_breakthrough(
+                    player_dict["id"]
+                )
+                yield event.plain_result(manual_result.get("message", "突破异常"))
+            elif auto_result.get("success"):
+                yield event.plain_result(auto_result["message"])
+            elif auto_result.get("message"):
+                yield event.plain_result(auto_result["message"])
+            else:
+                yield event.plain_result("当前不满足突破条件，请继续修炼。")
         else:
             yield event.plain_result("当前不满足突破条件，请继续修炼。")
 

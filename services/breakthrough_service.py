@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 from astrbot.api import logger
 
 from ..database import DatabaseManager
+from ..utils import bj_now_iso
 
 if TYPE_CHECKING:
     from ..config import ConfigManager
@@ -275,11 +276,16 @@ class BreakthroughService:
         condition = await self.get_breakthrough_condition(next_realm_dict["id"])
         if not condition:
             # 无条件限制，直接突破
-            return await self._perform_breakthrough(player_id, player, next_realm)
+            return await self._perform_breakthrough(player_id, player, next_realm_dict)
 
-        # 只处理自动突破类型
-        if condition["condition_type"] != "auto":
-            return None
+        # 根据突破条件类型处理
+        if condition["condition_type"] == "manual":
+            # 手动突破类型：不自动突破，返回标记（提示已由 check_breakthrough_prompt 统一生成）
+            return {
+                "success": False,
+                "can_breakthrough": False,
+                "is_manual_condition": True,
+            }
 
         # 检查物品需求
         item_requirements = condition.get("item_requirements", [])
@@ -288,25 +294,17 @@ class BreakthroughService:
                 player_id, item_requirements
             )
             if not item_check["can_breakthrough"]:
-                # 有突破条件但物品不足，发送提示
-                missing_names = [
-                    f"【{m['item_name']}】x{m['required']}"
-                    for m in item_check["missing"]
-                ]
+                # 物品不足，静默返回失败（提示已由 check_breakthrough_prompt 统一生成，每日一次）
                 return {
                     "success": False,
                     "can_breakthrough": False,
-                    "message": (
-                        f"【突破瓶颈】你的修为已达到【{player['realm_name']}】巅峰，"
-                        f"欲突破至【{next_realm_dict['name']}】还需：{', '.join(missing_names)}"
-                    ),
                 }
 
             # 消耗物品并突破
             await self.consume_breakthrough_items(player_id, item_requirements)
 
         return await self._perform_breakthrough(
-            player_id, player, next_realm, condition
+            player_id, player, next_realm_dict, condition
         )
 
     async def try_manual_breakthrough(
@@ -394,7 +392,7 @@ class BreakthroughService:
 
         # 执行突破（带概率）
         return await self._perform_breakthrough(
-            player_id, player, next_realm, condition, is_manual=True
+            player_id, player, next_realm_dict, condition, is_manual=True
         )
 
     async def _perform_breakthrough(
@@ -418,7 +416,11 @@ class BreakthroughService:
         Returns:
             Dict[str, Any]: 突破结果
         """
-        current_realm_name = player["realm_name"]
+        current_realm_name = "未知"
+        if self.cultivation_service:
+            current_realm = await self.cultivation_service.get_realm_by_id(player["realm_id"])
+            if current_realm:
+                current_realm_name = current_realm.name
         next_realm_name = next_realm["name"]
 
         # 自动突破100%成功，手动突破按概率
@@ -429,11 +431,14 @@ class BreakthroughService:
                 current_exp = player["experience"]
                 exp_loss = int(current_exp * 0.5)
 
-                # 扣除修为
-                await self.db.execute(
-                    "UPDATE players SET experience = MAX(0, experience - ?), updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                    (exp_loss, player_id),
-                )
+                # 扣除修为，通过统一入口处理
+                if self.cultivation_service:
+                    await self.cultivation_service.add_experience(player_id, -exp_loss)
+                else:
+                    await self.db.execute(
+                        "UPDATE players SET experience = MAX(0, experience - ?), updated_at = ? WHERE id = ?",
+                        (exp_loss, bj_now_iso(), player_id),
+                    )
 
                 # 扣除突破材料（如果条件中有物品需求）
                 lost_items_msg = ""
@@ -495,22 +500,31 @@ class BreakthroughService:
             luck=player["luck"],
         )
 
-        # 重置修为和临时修为
+        # 通过统一入口重置修为为0（遵循"所有数值增减用同一接口"规范）
+        if self.cultivation_service:
+            await self.cultivation_service.add_experience(player_id, -player["experience"])
+        else:
+            await self.db.execute(
+                "UPDATE players SET experience = 0, updated_at = ? WHERE id = ?",
+                (bj_now_iso(), player_id),
+            )
+
+        # 清空临时修为并更新境界和属性
         await self.db.execute(
             """UPDATE players
             SET realm_id = ?,
-                experience = 0,
                 temp_experience = 0,
                 health = ?,
                 mp = ?,
                 stamina = ?,
-                updated_at = CURRENT_TIMESTAMP
+                updated_at = ?
             WHERE id = ?""",
             (
                 next_realm["id"],
                 new_attrs["max_health"],
                 new_attrs["max_mp"],
                 new_attrs["max_stamina"],
+                bj_now_iso(),
                 player_id,
             ),
         )

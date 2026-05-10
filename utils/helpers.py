@@ -4,7 +4,9 @@
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+
+BEIJING_TZ = timezone(timedelta(hours=8))
 
 
 def generate_id() -> str:
@@ -183,42 +185,176 @@ def item_type_text(item_type: str) -> str:
     return type_map.get(item_type, "未知")
 
 
+def bj_now() -> datetime:
+    """
+    获取当前北京时间
+
+    项目内部统一使用北京时间存储和计算，
+    所有数据库写入、业务逻辑中的时间判断均使用此函数。
+
+    Returns:
+        datetime: 当前北京时间（带时区信息）
+    """
+    return datetime.now(BEIJING_TZ)
+
+
+def bj_now_iso() -> str:
+    """
+    获取当前北京时间的ISO格式字符串（不含时区后缀）
+
+    数据库中存储的时间统一使用此格式。
+    SQLite 使用字符串比较 ISO 时间，若格式不一致会导致比较错误，
+    因此统一去除时区后缀，确保数据格式一致。
+
+    Returns:
+        str: 格式为 'YYYY-MM-DDTHH:MM:SS.ffffff' 的北京时间字符串
+    """
+    return datetime.now(BEIJING_TZ).replace(tzinfo=None).isoformat()
+
+
+def ensure_bj(dt: datetime) -> datetime:
+    """
+    确保datetime对象为北京时区感知（aware）
+
+    数据库中存储的数据可能是 naive datetime（无时区信息），
+    而 bj_now() 返回的是 aware datetime。直接比较会抛出
+    "can't compare offset-naive and offset-aware datetimes" 异常。
+
+    此函数将 naive datetime 视为北京时间并补上时区信息，
+    aware datetime 则原样返回。
+
+    Args:
+        dt: 待检查的datetime对象
+
+    Returns:
+        datetime: 带北京时区信息的datetime对象
+    """
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=BEIJING_TZ)
+    return dt
+
+
+def to_db_iso(dt: datetime) -> str:
+    """
+    将datetime转换为数据库存储用的ISO格式字符串（不含时区后缀）
+
+    项目数据库使用 SQLite，时间比较依赖字符串序。
+    若数据带 +08:00 后缀会导致字符串比较结果错误。
+
+    此函数统一去除时区后缀，确保数据格式一致。
+
+    Args:
+        dt: datetime对象（naive或aware均可）
+
+    Returns:
+        str: 不含时区后缀的ISO格式时间字符串
+    """
+    if dt.tzinfo is not None:
+        dt = dt.replace(tzinfo=None)
+    return dt.isoformat()
+
+
+def now_bj() -> datetime:
+    """
+    获取当前北京时间（bj_now的别名，语义更清晰）
+
+    Returns:
+        datetime: 当前北京时间（带时区信息）
+    """
+    return bj_now()
+
+
+def bj_today_str() -> str:
+    """
+    获取北京时区的今日日期字符串
+
+    用于每日重置等场景，确保"每日"边界对齐北京时间的自然日，
+    而非UTC的0点切换。
+
+    Returns:
+        str: 格式为 'YYYY-MM-DD' 的北京日期字符串
+    """
+    return bj_now().strftime("%Y-%m-%d")
+
+
 def utc_to_local(utc_dt: datetime) -> datetime:
     """
-    将UTC时间转换为系统本地时间
+    将UTC时间转换为北京时间
 
-    项目内部统一使用UTC时间存储和计算，
-    仅在需要向用户展示时调用此函数转换为本地时间。
+    旧数据由UTC时间存储，迁移后此函数用于兼容性转换。
+    新代码应直接使用 bj_now() 获取北京时间。
 
     Args:
         utc_dt: UTC时间的datetime对象（naive或aware均可）
 
     Returns:
-        datetime: 本地时间的datetime对象（带时区信息）
+        datetime: 北京时间的datetime对象（带时区信息）
     """
     if utc_dt.tzinfo is None:
         utc_dt = utc_dt.replace(tzinfo=timezone.utc)
-    return utc_dt.astimezone()
+    return utc_dt.astimezone(BEIJING_TZ)
+
+
+def utc_now() -> datetime:
+    """
+    获取当前UTC时间（已弃用，保留向后兼容）
+
+    新代码请使用 bj_now() 代替。
+
+    Returns:
+        datetime: 当前UTC时间（带时区信息）
+    """
+    return datetime.now(timezone.utc)
+
+
+def utc_now_iso() -> str:
+    """
+    获取当前UTC时间的ISO格式字符串（已弃用，保留向后兼容）
+
+    新代码请使用 bj_now_iso() 代替。
+
+    Returns:
+        str: UTC时间的ISO格式字符串
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+
+
+def ensure_utc(dt: datetime) -> datetime:
+    """
+    确保datetime对象为UTC时区感知（已弃用，保留向后兼容）
+
+    新代码请使用 ensure_bj() 代替。
+
+    Args:
+        dt: 待检查的datetime对象
+
+    Returns:
+        datetime: 带UTC时区信息的datetime对象
+    """
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def now_local() -> datetime:
     """
-    获取当前本地时间
+    获取当前本地时间（已弃用，保留向后兼容）
+
+    新代码请使用 now_bj() 或 bj_now() 代替。
 
     Returns:
-        datetime: 当前本地时间（带时区信息）
+        datetime: 当前北京时间（带时区信息）
     """
-    return datetime.now(timezone.utc).astimezone()
+    return bj_now()
 
 
 def local_today_str() -> str:
     """
-    获取本地时区的今日日期字符串
+    获取本地时区的今日日期字符串（已弃用，保留向后兼容）
 
-    用于每日重置等场景，确保"每日"边界对齐用户所在时区的自然日，
-    而非UTC的0点切换。
+    新代码请使用 bj_today_str() 代替。
 
     Returns:
-        str: 格式为 'YYYY-MM-DD' 的本地日期字符串
+        str: 格式为 'YYYY-MM-DD' 的北京日期字符串
     """
-    return now_local().strftime("%Y-%m-%d")
+    return bj_today_str()

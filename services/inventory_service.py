@@ -15,6 +15,7 @@ from astrbot.api import logger
 
 from ..database import DatabaseManager
 from ..models import Item
+from ..utils import bj_now, to_db_iso
 
 if TYPE_CHECKING:
     from ..config import ConfigManager
@@ -485,12 +486,12 @@ class InventoryService:
         duration_hours = pill_cfg.get("toxicity_duration_hours", 24)
         same_pill_toxicity = pill_cfg.get("same_pill_toxicity", 1)
 
-        now = datetime.utcnow()
+        now = bj_now()
         expires_at = now + timedelta(hours=duration_hours)
 
         existing_active = await self.db.fetch_one(
             "SELECT * FROM pill_toxicity_records WHERE player_id = ? AND item_id = ? AND expires_at > ?",
-            (player_id, item.id, now.isoformat()),
+            (player_id, item.id, to_db_iso(now)),
         )
 
         toxicity_added = 0
@@ -498,7 +499,7 @@ class InventoryService:
             toxicity_added = same_pill_toxicity * quantity
             await self.db.execute(
                 "UPDATE pill_toxicity_records SET toxicity_value = toxicity_value + ?, expires_at = ? WHERE id = ?",
-                (toxicity_added, expires_at.isoformat(), existing_active["id"]),
+                (toxicity_added, to_db_iso(expires_at), existing_active["id"]),
             )
         else:
             toxicity_added = 0
@@ -513,8 +514,8 @@ class InventoryService:
                     item.id,
                     item.name,
                     0,
-                    now.isoformat(),
-                    expires_at.isoformat(),
+                    to_db_iso(now),
+                    to_db_iso(expires_at),
                 ),
             )
 
@@ -537,12 +538,12 @@ class InventoryService:
         Returns:
             int: 丹毒总量
         """
-        now = datetime.utcnow()
+        now = bj_now()
         await self._cleanup_expired_toxicity(player_id)
 
         result = await self.db.fetch_one(
             "SELECT COALESCE(SUM(toxicity_value), 0) as total FROM pill_toxicity_records WHERE player_id = ? AND expires_at > ?",
-            (player_id, now.isoformat()),
+            (player_id, to_db_iso(now)),
         )
         return result["total"] if result else 0
 
@@ -553,10 +554,10 @@ class InventoryService:
         Args:
             player_id: 玩家ID
         """
-        now = datetime.utcnow()
+        now = bj_now()
         await self.db.execute(
             "DELETE FROM pill_toxicity_records WHERE player_id = ? AND expires_at <= ?",
-            (player_id, now.isoformat()),
+            (player_id, to_db_iso(now)),
         )
         await self.db.commit()
 
@@ -602,10 +603,10 @@ class InventoryService:
         """
         await self._cleanup_expired_toxicity(player_id)
 
-        now = datetime.utcnow()
+        now = bj_now()
         records = await self.db.fetch_all(
             "SELECT * FROM pill_toxicity_records WHERE player_id = ? AND expires_at > ? ORDER BY taken_at DESC",
-            (player_id, now.isoformat()),
+            (player_id, to_db_iso(now)),
         )
 
         total_toxicity = sum(r["toxicity_value"] for r in records)
@@ -653,12 +654,17 @@ class InventoryService:
             return f"恢复了 {item.effect_value} 点生命值"
 
         elif item.effect_type == "exp":
-            await self.db.execute(
-                "UPDATE players SET experience = experience + ? WHERE id = ?",
-                (item.effect_value, player_id),
-            )
-            await self.db.commit()
-            return f"增加了 {item.effect_value} 点修为"
+            if self.cultivation_service:
+                exp_result = await self.cultivation_service.add_experience(player_id, item.effect_value)
+                actual = exp_result["actual_change"]
+            else:
+                await self.db.execute(
+                    "UPDATE players SET experience = experience + ? WHERE id = ?",
+                    (item.effect_value, player_id),
+                )
+                await self.db.commit()
+                actual = item.effect_value
+            return f"增加了 {actual} 点修为"
 
         elif item.effect_type == "attack":
             return f"攻击力临时提升 {item.effect_value} 点"

@@ -13,7 +13,7 @@ from astrbot.api import logger
 
 from ..database import DatabaseManager
 from ..models import Player
-from ..utils import calc_battle_attrs, local_today_str
+from ..utils import bj_now, bj_now_iso, bj_today_str, calc_battle_attrs
 
 if TYPE_CHECKING:
     from ..config import ConfigManager
@@ -235,10 +235,11 @@ class PlayerService:
         if not updates:
             return await self.get_player_by_id(player_id)
 
+        values.append(bj_now_iso())
         values.append(player_id)
         sql = f"""
             UPDATE players
-            SET {", ".join(updates)}, updated_at = CURRENT_TIMESTAMP
+            SET {", ".join(updates)}, updated_at = ?
             WHERE id = ?
         """
         await self.db.execute(sql, tuple(values))
@@ -382,13 +383,14 @@ class PlayerService:
                     health = ?,
                     mp = ?,
                     stamina = ?,
-                    updated_at = CURRENT_TIMESTAMP
+                    updated_at = ?
                 WHERE id = ?
                 """,
                 (
                     battle_attrs["max_health"],
                     battle_attrs["max_mp"],
                     battle_attrs["max_stamina"],
+                    bj_now_iso(),
                     player_id,
                 ),
             )
@@ -424,10 +426,10 @@ class PlayerService:
                 UPDATE players
                 SET is_deleted = 1,
                     ban_reason = ?,
-                    updated_at = CURRENT_TIMESTAMP
+                    updated_at = ?
                 WHERE id = ?
                 """,
-                (ban_reason, player_id),
+                (ban_reason, bj_now_iso(), player_id),
             )
             await self.db.commit()
 
@@ -457,10 +459,10 @@ class PlayerService:
                 UPDATE players
                 SET is_deleted = 0,
                     ban_reason = NULL,
-                    updated_at = CURRENT_TIMESTAMP
+                    updated_at = ?
                 WHERE id = ?
                 """,
-                (player_id,),
+                (bj_now_iso(), player_id),
             )
             await self.db.commit()
 
@@ -525,12 +527,17 @@ class PlayerService:
         if field not in allowed_fields:
             raise ValueError(f"不允许修改字段: {field}")
 
+        # 修为字段通过统一入口处理截断和溢出
+        if field == "experience" and self.cultivation_service:
+            await self.cultivation_service.add_experience(player_id, value)
+            return await self.get_player_by_id(player_id)
+
         sql = f"""
             UPDATE players
-            SET {field} = MAX(0, {field} + ?), updated_at = CURRENT_TIMESTAMP
+            SET {field} = MAX(0, {field} + ?), updated_at = ?
             WHERE id = ?
         """
-        await self.db.execute(sql, (value, player_id))
+        await self.db.execute(sql, (value, bj_now_iso(), player_id))
         await self.db.commit()
 
         return await self.get_player_by_id(player_id)
@@ -557,10 +564,10 @@ class PlayerService:
 
         sql = """
             UPDATE players
-            SET username = ?, updated_at = CURRENT_TIMESTAMP
+            SET username = ?, updated_at = ?
             WHERE user_id = ?
         """
-        await self.db.execute(sql, (new_username, user_id))
+        await self.db.execute(sql, (new_username, bj_now_iso(), user_id))
         await self.db.commit()
 
         logger.info(f"玩家 {user_id} 修改道号: {player.username} -> {new_username}")
@@ -610,7 +617,7 @@ class PlayerService:
             return {"gained": 0, "message": "", "needs_breakthrough": False}
 
         # 防刷：冷却时间检查
-        now = datetime.utcnow()
+        now = bj_now()
         now_timestamp = now.timestamp()
         last_time = self._passive_exp_cooldowns.get(user_id)
         if last_time is not None:
@@ -619,11 +626,17 @@ class PlayerService:
                 return {"gained": 0, "message": "", "needs_breakthrough": False}
 
         # 防刷：每日上限检查（使用本地时区日期，确保"每日"边界对齐用户自然日）
-        today_str = local_today_str()
+        today_str = bj_today_str()
         daily_key = f"{user_id}:{today_str}"
         current_daily = self._passive_exp_daily.get(daily_key, 0)
         if current_daily >= daily_limit:
             return {"gained": 0, "message": "", "needs_breakthrough": False}
+
+        # 清理过期的每日累计key（非今日的key不再需要，避免内存泄漏）
+        if len(self._passive_exp_daily) > 1000:
+            expired_keys = [k for k in self._passive_exp_daily if not k.endswith(today_str)]
+            for k in expired_keys:
+                del self._passive_exp_daily[k]
 
         # 计算本次实际可获得的修为（不超过每日上限）
         remaining_daily = daily_limit - current_daily
@@ -653,39 +666,30 @@ class PlayerService:
 
         current_exp = player["experience"]
 
-        # 增量更新修为，使用SQL原子操作避免并发写覆盖
-        # 当有境界上限时，超出部分转入临时修为；无上限时不截断
-        if exp_cap > 0:
-            await self.db.execute(
-                """
-                UPDATE players
-                SET experience = MIN(experience + ?, ?),
-                    temp_experience = temp_experience + MAX(0, experience + ? - ?),
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-                """,
-                (actual_exp_gain, exp_cap, actual_exp_gain, exp_cap, player_id),
-            )
+        # 通过统一入口增加修为，自动处理截断和溢出
+        if self.cultivation_service:
+            exp_result = await self.cultivation_service.add_experience(player_id, actual_exp_gain)
+            new_exp = exp_result["current_exp"]
+            temp_exp = exp_result["temp_exp"]
+            overflow = exp_result["overflow"]
         else:
             await self.db.execute(
                 """
                 UPDATE players
                 SET experience = experience + ?,
-                    updated_at = CURRENT_TIMESTAMP
+                    updated_at = ?
                 WHERE id = ?
                 """,
-                (actual_exp_gain, player_id),
+                (actual_exp_gain, bj_now_iso(), player_id),
             )
-        await self.db.commit()
-
-        # 查询更新后的实际修为值
-        updated_player = await self.db.fetch_one(
-            "SELECT experience, temp_experience FROM players WHERE id = ?",
-            (player_id,),
-        )
-        new_exp = updated_player["experience"] if updated_player else current_exp
-        temp_exp = updated_player.get("temp_experience", 0) if updated_player else 0
-        overflow = max(0, current_exp + actual_exp_gain - exp_cap) if exp_cap > 0 else 0
+            await self.db.commit()
+            updated_player = await self.db.fetch_one(
+                "SELECT experience, temp_experience FROM players WHERE id = ?",
+                (player_id,),
+            )
+            new_exp = updated_player["experience"] if updated_player else current_exp
+            temp_exp = updated_player.get("temp_experience", 0) if updated_player else 0
+            overflow = 0
 
         # 记录发言日志
         log_id = str(uuid.uuid4())
@@ -707,46 +711,11 @@ class PlayerService:
         )
         await self.db.commit()
 
-        # 判断是否达到境界上限，需要突破
-        needs_breakthrough = exp_cap > 0 and new_exp >= exp_cap
-        breakthrough_message = ""
-
-        if needs_breakthrough:
-            # 检查今天是否已经提示过
-            last_prompt = player.get("last_breakthrough_prompt")
-            should_prompt = True
-
-            if last_prompt:
-                last_prompt_dt = datetime.fromisoformat(last_prompt)
-                # 如果今天已经提示过，不再提示
-                if last_prompt_dt.date() == now.date():
-                    should_prompt = False
-
-            if should_prompt:
-                # 更新上次提示时间
-                await self.db.execute(
-                    "UPDATE players SET last_breakthrough_prompt = ? WHERE id = ?",
-                    (now.isoformat(), player_id),
-                )
-                await self.db.commit()
-                breakthrough_message = (
-                    f"\n【突破提示】你的修为已达到【{realm_name}】巅峰（{new_exp}/{exp_cap}），"
-                    f"请使用<突破>指令尝试突破到下一境界！"
-                )
-                if overflow > 0:
-                    breakthrough_message += (
-                        f"\n（{overflow}点修为已临时存储，突破后不会自动继承）"
-                    )
-
         result = {
             "gained": actual_exp_gain,
             "actual_exp": new_exp,
             "overflow": overflow,
-            "message": f"你在群聊中有所感悟，修为增加{actual_exp_gain}点。"
-            if not needs_breakthrough
-            else "",
-            "needs_breakthrough": needs_breakthrough,
-            "breakthrough_message": breakthrough_message,
+            "message": f"你在群聊中有所感悟，修为增加{actual_exp_gain}点。",
         }
 
         logger.info(
