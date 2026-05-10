@@ -56,9 +56,7 @@ class PlayerAPI:
 
         exp_required = 0
         if self.cultivation_service:
-            next_realm = await self.cultivation_service.get_next_realm(realm_level)
-            if next_realm:
-                exp_required = next_realm.experience_required
+            exp_required = await self.cultivation_service.get_exp_cap_for_realm(player_dict["realm_id"])
 
         battle_attrs = calc_battle_attrs(
             level=realm_level,

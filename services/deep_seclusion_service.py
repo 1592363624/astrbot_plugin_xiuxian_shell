@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 from astrbot.api import logger
 
 from ..database import DatabaseManager
+from ..utils import utc_to_local
 
 if TYPE_CHECKING:
     from ..config import ConfigManager
@@ -227,10 +228,11 @@ class DeepSeclusionService:
             )
         )
 
+        ended_at_local = utc_to_local(ended_at)
         message_lines = [
             "【深度闭关】",
             f"你进入洞府，开启了一次长达{duration_hours}小时的深度闭关。",
-            f"预计出关时间：{ended_at.strftime('%Y-%m-%d %H:%M:%S')}",
+            f"预计出关时间：{ended_at_local.strftime('%Y-%m-%d %H:%M:%S')}",
         ]
         if dao_heart_penalty:
             message_lines.append("【状态影响】道心破碎，本次闭关收益减半。")
@@ -318,9 +320,12 @@ class DeepSeclusionService:
 
         base_exp = 0
         if self.cultivation_service:
-            realm = await self.cultivation_service.get_realm_by_id(player["realm_id"])
-            if realm:
-                base_exp = realm.experience_required
+            exp_cap = await self.cultivation_service.get_exp_cap_for_realm(player["realm_id"])
+            base_exp = exp_cap if exp_cap > 0 else 0
+            if base_exp == 0:
+                realm = await self.cultivation_service.get_realm_by_id(player["realm_id"])
+                if realm:
+                    base_exp = realm.experience_required
 
         # 获取闭关配置
         seclusion_cfg = {}

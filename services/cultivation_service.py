@@ -226,12 +226,8 @@ class CultivationService:
         if not current_realm:
             raise ValueError("当前境界数据异常")
 
-        next_realm = await self.get_next_realm(current_realm.level)
-        base_exp = (
-            next_realm.experience_required
-            if next_realm
-            else current_realm.experience_required
-        )
+        exp_cap = await self.get_exp_cap_for_realm(player["realm_id"])
+        base_exp = exp_cap if exp_cap > 0 else current_realm.experience_required
 
         seclusion_cfg = self._get_seclusion_config()
         success_prob = seclusion_cfg.get("success_probability", 0.60)
@@ -320,13 +316,8 @@ class CultivationService:
         if encounter_result:
             message_lines.append(f"【奇遇】{encounter_result['message']}")
 
-        # 获取下一境界所需修为作为显示分母，如果没有下一境界则显示当前境界要求
-        next_realm_for_display = await self.get_next_realm(current_realm.level)
-        exp_required = (
-            next_realm_for_display.experience_required
-            if next_realm_for_display
-            else current_realm.experience_required
-        )
+        # 获取修为上限作为显示分母
+        exp_required = exp_cap if exp_cap > 0 else current_realm.experience_required
 
         message_lines.append(f"当前境界：{current_realm.name}")
         message_lines.append(f"当前修为：{current_exp}/{exp_required}")
@@ -668,6 +659,27 @@ class CultivationService:
             if realm.level > current_level:
                 return realm
         return None
+
+    async def get_exp_cap_for_realm(self, realm_id: str) -> int:
+        """
+        获取指定境界的修为上限
+
+        修为上限定义为下一境界所需的修为值（即突破门槛）。
+        若已是最高境界则无上限，返回0表示不限制。
+
+        Args:
+            realm_id: 当前境界ID
+
+        Returns:
+            int: 修为上限值，0表示无上限
+        """
+        realm = await self.get_realm_by_id(realm_id)
+        if not realm:
+            return 0
+        next_realm = await self.get_next_realm(realm.level)
+        if next_realm:
+            return next_realm.experience_required
+        return 0
 
     async def get_all_realms(self) -> list[Realm]:
         """获取所有境界"""

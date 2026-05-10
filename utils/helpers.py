@@ -4,6 +4,7 @@
 """
 
 import uuid
+from datetime import datetime, timezone
 
 
 def generate_id() -> str:
@@ -180,3 +181,44 @@ def item_type_text(item_type: str) -> str:
         "currency": "货币",
     }
     return type_map.get(item_type, "未知")
+
+
+def utc_to_local(utc_dt: datetime) -> datetime:
+    """
+    将UTC时间转换为系统本地时间
+
+    项目内部统一使用UTC时间存储和计算，
+    仅在需要向用户展示时调用此函数转换为本地时间。
+
+    Args:
+        utc_dt: UTC时间的datetime对象（naive或aware均可）
+
+    Returns:
+        datetime: 本地时间的datetime对象（带时区信息）
+    """
+    if utc_dt.tzinfo is None:
+        utc_dt = utc_dt.replace(tzinfo=timezone.utc)
+    return utc_dt.astimezone()
+
+
+def now_local() -> datetime:
+    """
+    获取当前本地时间
+
+    Returns:
+        datetime: 当前本地时间（带时区信息）
+    """
+    return datetime.now(timezone.utc).astimezone()
+
+
+def local_today_str() -> str:
+    """
+    获取本地时区的今日日期字符串
+
+    用于每日重置等场景，确保"每日"边界对齐用户所在时区的自然日，
+    而非UTC的0点切换。
+
+    Returns:
+        str: 格式为 'YYYY-MM-DD' 的本地日期字符串
+    """
+    return now_local().strftime("%Y-%m-%d")

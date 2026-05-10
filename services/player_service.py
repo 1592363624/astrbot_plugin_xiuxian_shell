@@ -13,7 +13,7 @@ from astrbot.api import logger
 
 from ..database import DatabaseManager
 from ..models import Player
-from ..utils import calc_battle_attrs
+from ..utils import calc_battle_attrs, local_today_str
 
 if TYPE_CHECKING:
     from ..config import ConfigManager
@@ -618,8 +618,8 @@ class PlayerService:
             if elapsed < cooldown_seconds:
                 return {"gained": 0, "message": "", "needs_breakthrough": False}
 
-        # 防刷：每日上限检查
-        today_str = now.strftime("%Y-%m-%d")
+        # 防刷：每日上限检查（使用本地时区日期，确保"每日"边界对齐用户自然日）
+        today_str = local_today_str()
         daily_key = f"{user_id}:{today_str}"
         current_daily = self._passive_exp_daily.get(daily_key, 0)
         if current_daily >= daily_limit:
@@ -643,38 +643,49 @@ class PlayerService:
         if not player:
             return {"gained": 0, "message": "", "needs_breakthrough": False}
 
-        realm_exp_required = 0
         realm_name = "未知"
+        exp_cap = 0
         if self.cultivation_service:
             realm = await self.cultivation_service.get_realm_by_id(player["realm_id"])
             if realm:
-                realm_exp_required = realm.experience_required
                 realm_name = realm.name
+            exp_cap = await self.cultivation_service.get_exp_cap_for_realm(player["realm_id"])
 
         current_exp = player["experience"]
-        temp_exp = player.get("temp_experience", 0)
 
-        # 计算实际可增加的修为（受境界上限控制）
-        new_exp = current_exp + actual_exp_gain
-        overflow = 0
-
-        if new_exp > realm_exp_required:
-            # 超出部分存入临时修为
-            overflow = new_exp - realm_exp_required
-            new_exp = realm_exp_required
-
-        # 更新玩家修为和临时修为
-        await self.db.execute(
-            """
-            UPDATE players
-            SET experience = ?,
-                temp_experience = temp_experience + ?,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-            """,
-            (new_exp, overflow, player_id),
-        )
+        # 增量更新修为，使用SQL原子操作避免并发写覆盖
+        # 当有境界上限时，超出部分转入临时修为；无上限时不截断
+        if exp_cap > 0:
+            await self.db.execute(
+                """
+                UPDATE players
+                SET experience = MIN(experience + ?, ?),
+                    temp_experience = temp_experience + MAX(0, experience + ? - ?),
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (actual_exp_gain, exp_cap, actual_exp_gain, exp_cap, player_id),
+            )
+        else:
+            await self.db.execute(
+                """
+                UPDATE players
+                SET experience = experience + ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (actual_exp_gain, player_id),
+            )
         await self.db.commit()
+
+        # 查询更新后的实际修为值
+        updated_player = await self.db.fetch_one(
+            "SELECT experience, temp_experience FROM players WHERE id = ?",
+            (player_id,),
+        )
+        new_exp = updated_player["experience"] if updated_player else current_exp
+        temp_exp = updated_player.get("temp_experience", 0) if updated_player else 0
+        overflow = max(0, current_exp + actual_exp_gain - exp_cap) if exp_cap > 0 else 0
 
         # 记录发言日志
         log_id = str(uuid.uuid4())
@@ -697,7 +708,7 @@ class PlayerService:
         await self.db.commit()
 
         # 判断是否达到境界上限，需要突破
-        needs_breakthrough = new_exp >= realm_exp_required
+        needs_breakthrough = exp_cap > 0 and new_exp >= exp_cap
         breakthrough_message = ""
 
         if needs_breakthrough:
@@ -719,7 +730,7 @@ class PlayerService:
                 )
                 await self.db.commit()
                 breakthrough_message = (
-                    f"\n【突破提示】你的修为已达到【{realm_name}】巅峰（{realm_exp_required}/{realm_exp_required}），"
+                    f"\n【突破提示】你的修为已达到【{realm_name}】巅峰（{new_exp}/{exp_cap}），"
                     f"请使用<突破>指令尝试突破到下一境界！"
                 )
                 if overflow > 0:
