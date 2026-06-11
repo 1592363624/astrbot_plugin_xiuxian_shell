@@ -146,26 +146,6 @@ def progress_bar(current: int, total: int, length: int = 10) -> str:
     return "■" * filled + "□" * empty
 
 
-def rarity_text(rarity: str) -> str:
-    """
-    获取品质中文名称
-
-    Args:
-        rarity: 品质代码
-
-    Returns:
-        str: 中文名称
-    """
-    rarity_map = {
-        "common": "普通",
-        "uncommon": "优秀",
-        "rare": "稀有",
-        "epic": "史诗",
-        "legendary": "传说",
-    }
-    return rarity_map.get(rarity, "未知")
-
-
 def item_type_text(item_type: str) -> str:
     """
     获取物品类型中文名称

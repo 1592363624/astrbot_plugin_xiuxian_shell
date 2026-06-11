@@ -91,7 +91,6 @@ async def db(tmp_path):
             name TEXT NOT NULL,
             description TEXT,
             item_type TEXT NOT NULL,
-            rarity TEXT DEFAULT 'common',
             effect_type TEXT,
             effect_value INTEGER DEFAULT 0,
             price INTEGER DEFAULT 0,
@@ -128,12 +127,12 @@ async def db(tmp_path):
 
     # 插入突破物品
     await db_manager.execute(
-        "INSERT INTO items (id, name, description, item_type, rarity, effect_type, effect_value, price, is_usable) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        ("item_zhuji_dan", "筑基丹", "筑基期突破必备", "material", "rare", "breakthrough", 0, 500, 0),
+        "INSERT INTO items (id, name, description, item_type, effect_type, effect_value, price, is_usable) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ("item_zhuji_dan", "筑基丹", "筑基期突破必备", "material", "breakthrough", 0, 500, 0),
     )
     await db_manager.execute(
-        "INSERT INTO items (id, name, description, item_type, rarity, effect_type, effect_value, price, is_usable) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        ("item_tianhuo_ye", "天火液", "结丹之劫必备", "material", "epic", "breakthrough", 0, 2000, 0),
+        "INSERT INTO items (id, name, description, item_type, effect_type, effect_value, price, is_usable) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ("item_tianhuo_ye", "天火液", "结丹之劫必备", "material", "breakthrough", 0, 2000, 0),
     )
     await db_manager.commit()
 

@@ -30,6 +30,30 @@ class PlayerService:
         self._register_timestamps: dict[str, float] = {}
         self._passive_exp_cooldowns: dict[str, float] = {}
         self._passive_exp_daily: dict[str, int] = {}
+        self._daily_stats_ready = False
+        self._realms_cache: dict[int, str] = {}
+
+    async def ensure_daily_stats_table(self):
+        """
+        确保 player_daily_stats 表存在
+
+        此方法在插件初始化时调用，以轻量级方式创建表（不依赖Alembic迁移），
+        确保 Bot 重启后被动修为每日上限数据不丢失。
+        """
+        table_exists = await self.db.table_exists("player_daily_stats")
+        if not table_exists:
+            await self.db.execute("""
+                CREATE TABLE IF NOT EXISTS player_daily_stats (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    stat_date TEXT NOT NULL,
+                    passive_exp_accumulated INTEGER DEFAULT 0,
+                    UNIQUE(user_id, stat_date)
+                )
+            """)
+            await self.db.commit()
+            logger.info("player_daily_stats 表已创建，被动修为每日上限数据将持久化存储")
+        self._daily_stats_ready = True
 
     def _validate_username(self, username: str) -> str | None:
         if not username:
@@ -628,12 +652,24 @@ class PlayerService:
         # 防刷：每日上限检查（使用本地时区日期，确保"每日"边界对齐用户自然日）
         today_str = bj_today_str()
         daily_key = f"{user_id}:{today_str}"
-        current_daily = self._passive_exp_daily.get(daily_key, 0)
+        current_daily = self._passive_exp_daily.get(daily_key)
+        if current_daily is None:
+            if self._daily_stats_ready:
+                db_record = await self.db.fetch_one(
+                    "SELECT passive_exp_accumulated FROM player_daily_stats WHERE user_id = ? AND stat_date = ?",
+                    (user_id, today_str),
+                )
+                current_daily = db_record["passive_exp_accumulated"] if db_record else 0
+                self._passive_exp_daily[daily_key] = current_daily
+            else:
+                current_daily = 0
+
         if current_daily >= daily_limit:
             return {"gained": 0, "message": "", "needs_breakthrough": False}
 
         # 清理过期的每日累计key（非今日的key不再需要，避免内存泄漏）
-        if len(self._passive_exp_daily) > 1000:
+        # 降低阈值到300，并且每天至少触发一次清理
+        if len(self._passive_exp_daily) > 300:
             expired_keys = [k for k in self._passive_exp_daily if not k.endswith(today_str)]
             for k in expired_keys:
                 del self._passive_exp_daily[k]
@@ -644,9 +680,19 @@ class PlayerService:
         if actual_exp_gain <= 0:
             return {"gained": 0, "message": "", "needs_breakthrough": False}
 
-        # 更新冷却和每日累计
+        # 更新冷却和每日累计（内存 + 数据库双重持久化）
         self._passive_exp_cooldowns[user_id] = now_timestamp
-        self._passive_exp_daily[daily_key] = current_daily + actual_exp_gain
+        new_daily = current_daily + actual_exp_gain
+        self._passive_exp_daily[daily_key] = new_daily
+
+        if self._daily_stats_ready:
+            await self.db.execute(
+                """INSERT INTO player_daily_stats (user_id, stat_date, passive_exp_accumulated)
+                VALUES (?, ?, ?)
+                ON CONFLICT(user_id, stat_date) DO UPDATE SET passive_exp_accumulated = ?""",
+                (user_id, today_str, new_daily, new_daily),
+            )
+            await self.db.commit()
 
         # 获取玩家当前境界和修为
         player = await self.db.fetch_one(
@@ -723,6 +769,13 @@ class PlayerService:
         )
         return result
 
+    async def _get_realms_cache(self) -> dict[int, str]:
+        """获取境界等级→名称映射缓存，避免重复查询"""
+        if not self._realms_cache and self.cultivation_service:
+            realms = await self.cultivation_service.get_all_realms()
+            self._realms_cache = {r.level: r.name for r in realms}
+        return self._realms_cache
+
     async def get_leaderboard(
         self, category: str, limit: int = 10
     ) -> list[dict[str, Any]]:
@@ -736,9 +789,10 @@ class PlayerService:
         Returns:
             List[Dict[str, Any]]: 排行列表
         """
+        realms_cache = await self._get_realms_cache()
+
         if category == "realm":
             # 按境界等级降序，同境界按修为降序
-            realms_cache = {r.level: r.name for r in await self.cultivation_service.get_all_realms()} if self.cultivation_service else {}
             rows = await self.db.fetch_all(
                 """
                 SELECT username, experience, realm_level,
@@ -771,7 +825,6 @@ class PlayerService:
 
         elif category == "chat":
             # 按发言次数降序
-            realms_cache = {r.level: r.name for r in await self.cultivation_service.get_all_realms()} if self.cultivation_service else {}
             rows = await self.db.fetch_all(
                 """
                 SELECT p.username, p.realm_level, COUNT(c.id) as chat_count
@@ -796,7 +849,6 @@ class PlayerService:
 
         elif category == "wealth":
             # 按灵石数量降序
-            realms_cache = {r.level: r.name for r in await self.cultivation_service.get_all_realms()} if self.cultivation_service else {}
             rows = await self.db.fetch_all(
                 """
                 SELECT username, realm_level, spirit_stone
@@ -844,8 +896,7 @@ class PlayerService:
         allowed_sort_fields = {"created_at", "username", "realm_name", "experience"}
         if sort_field not in allowed_sort_fields:
             sort_field = "created_at"
-        if sort_order.upper() not in {"ASC", "DESC"}:
-            sort_order = "DESC"
+        sort_order = "ASC" if sort_order.upper() == "ASC" else "DESC"
 
         # 构建查询条件
         where_clause = ""

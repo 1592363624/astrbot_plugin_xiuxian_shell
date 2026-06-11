@@ -26,9 +26,9 @@ DEFAULT_DATA = {
         {"id": "realm_010", "name": "金丹初期", "description": "成功凝聚金丹，寿元大增", "level": 10, "experience_required": 12000, "breakthrough_probability": 20, "event_id": 1},
     ],
     "items": [
-        {"id": "item_001", "name": "回春丹", "description": "恢复50点生命值", "item_type": "consumable", "rarity": "common", "effect_type": "heal", "effect_value": 50, "price": 50, "is_usable": True, "realm_requirement": None},
-        {"id": "item_002", "name": "聚灵丹", "description": "增加100点修为", "item_type": "consumable", "rarity": "uncommon", "effect_type": "exp", "effect_value": 100, "price": 200, "is_usable": True, "realm_requirement": None},
-        {"id": "item_003", "name": "灵石", "description": "修仙界通用货币", "item_type": "currency", "rarity": "common", "effect_type": "spirit_stone", "effect_value": 1, "price": 1, "is_usable": False, "realm_requirement": None},
+        {"id": "item_001", "name": "回春丹", "description": "恢复50点生命值", "item_type": "consumable", "effect_type": "heal", "effect_value": 50, "price": 50, "is_usable": True, "realm_requirement": None},
+        {"id": "item_002", "name": "聚灵丹", "description": "增加100点修为", "item_type": "consumable", "effect_type": "exp", "effect_value": 100, "price": 200, "is_usable": True, "realm_requirement": None},
+        {"id": "item_003", "name": "灵石", "description": "修仙界通用货币", "item_type": "currency", "effect_type": "spirit_stone", "effect_value": 1, "price": 1, "is_usable": False, "realm_requirement": None},
     ],
     "skills": [
         {"id": "skill_001", "name": "基础吐纳术", "description": "最基础的修炼功法", "skill_type": "cultivation", "realm_requirement": "realm_001", "experience_gain": 10, "damage": 0, "cooldown": 0, "defense_bonus": 0},

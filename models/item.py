@@ -26,7 +26,6 @@ class Item:
     name: str
     description: str
     item_type: str  # consumable, equipment, material, currency
-    rarity: str = "common"  # common, uncommon, rare, epic, legendary
     effect_type: str | None = None  # heal, exp, attack, defense, spirit_stone
     effect_value: int = 0
     price: int = 0
@@ -59,7 +58,6 @@ class Item:
             "name": self.name,
             "description": self.description,
             "item_type": self.item_type,
-            "rarity": self.rarity,
             "effect_type": self.effect_type,
             "effect_value": self.effect_value,
             "price": self.price,
@@ -82,7 +80,6 @@ class Item:
             name=data.get("name"),
             description=data.get("description"),
             item_type=data.get("item_type"),
-            rarity=data.get("rarity", "common"),
             effect_type=data.get("effect_type"),
             effect_value=data.get("effect_value", 0),
             price=data.get("price", 0),

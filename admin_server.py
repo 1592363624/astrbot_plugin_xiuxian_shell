@@ -43,7 +43,10 @@ class AdminServer:
         self.item_effect_service = item_effect_service
         self.host = host
         self.port = port
-        self.password = password or "xiuxian_admin"
+        if not password:
+            logger.warning("修仙后台管理未设置密码，正在使用默认密码。请在配置中设置 admin_password。")
+            password = "xiuxian_admin"
+        self.password = password
         self._app: web.Application | None = None
         self._runner: web.AppRunner | None = None
         self._site: web.TCPSite | None = None

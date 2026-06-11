@@ -30,7 +30,6 @@ DEFAULT_ITEMS_DATA = [
         "name": "回春丹",
         "description": "恢复50点生命值",
         "item_type": "consumable",
-        "rarity": "common",
         "effect_type": "heal",
         "effect_value": 50,
         "price": 50,
@@ -42,7 +41,6 @@ DEFAULT_ITEMS_DATA = [
         "name": "聚灵丹",
         "description": "增加100点修为",
         "item_type": "consumable",
-        "rarity": "uncommon",
         "effect_type": "exp",
         "effect_value": 100,
         "price": 200,
@@ -54,7 +52,6 @@ DEFAULT_ITEMS_DATA = [
         "name": "灵石",
         "description": "修仙界通用货币",
         "item_type": "currency",
-        "rarity": "common",
         "effect_type": "spirit_stone",
         "effect_value": 1,
         "price": 1,
@@ -66,7 +63,6 @@ DEFAULT_ITEMS_DATA = [
         "name": "清灵丹",
         "description": "清除体内丹毒",
         "item_type": "consumable",
-        "rarity": "rare",
         "effect_type": "detox",
         "effect_value": 0,
         "price": 300,
@@ -78,7 +74,6 @@ DEFAULT_ITEMS_DATA = [
         "name": "筑基丹",
         "description": "增加突破筑基成功率",
         "item_type": "consumable",
-        "rarity": "epic",
         "effect_type": "breakthrough",
         "effect_value": 20,
         "price": 1000,
@@ -90,7 +85,6 @@ DEFAULT_ITEMS_DATA = [
         "name": "破境丹",
         "description": "增加突破境界概率",
         "item_type": "consumable",
-        "rarity": "legendary",
         "effect_type": "breakthrough",
         "effect_value": 30,
         "price": 5000,
@@ -102,7 +96,6 @@ DEFAULT_ITEMS_DATA = [
         "name": "灵草",
         "description": "炼制丹药的原料",
         "item_type": "material",
-        "rarity": "common",
         "effect_type": None,
         "effect_value": 0,
         "price": 20,
@@ -114,7 +107,6 @@ DEFAULT_ITEMS_DATA = [
         "name": "百年灵芝",
         "description": "珍贵的炼丹药材",
         "item_type": "material",
-        "rarity": "rare",
         "effect_type": None,
         "effect_value": 0,
         "price": 500,
@@ -183,7 +175,7 @@ class InventoryService:
             List[Dict[str, Any]]: 储物袋物品列表
         """
         sql = """
-            SELECT pi.*, i.name, i.description, i.item_type, i.rarity, i.effect_type, i.effect_value
+            SELECT pi.*, i.name, i.description, i.item_type, i.effect_type, i.effect_value
             FROM player_inventory pi
             JOIN items i ON pi.item_id = i.id
             WHERE pi.player_id = ?

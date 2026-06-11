@@ -304,11 +304,6 @@ tr:hover td { background: rgba(201, 168, 76, 0.04); }
   font-size: 11px;
   font-weight: 500;
 }
-.tag-common { background: rgba(149, 165, 166, 0.2); color: #95a5a6; }
-.tag-uncommon { background: rgba(46, 204, 113, 0.2); color: #2ecc71; }
-.tag-rare { background: rgba(52, 152, 219, 0.2); color: #3498db; }
-.tag-epic { background: rgba(155, 89, 182, 0.2); color: #9b59b6; }
-.tag-legendary { background: rgba(230, 126, 34, 0.2); color: #e67e22; }
 .tag-gold { background: rgba(201, 168, 76, 0.2); color: var(--text-gold); }
 
 .pagination {
@@ -558,7 +553,6 @@ const Utils = {
   },
   formatDate: (d) => d ? new Date(d).toLocaleString('zh-CN') : '-',
   debounce: (fn, ms = 300) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; },
-  rarityTag: (r) => `<span class="tag tag-${r}">${{common:'普通',uncommon:'优秀',rare:'稀有',epic:'史诗',legendary:'传说'}[r]||r}</span>`,
   itemTypeLabel: (t) => ({consumable:'消耗品',equipment:'装备',material:'材料',currency:'货币'}[t]||t),
   skillTypeLabel: (t) => ({cultivation:'修炼',combat:'战斗',passive:'被动'}[t]||t),
   eventTypeLabel: (t) => ({explore:'探索',combat:'战斗',random:'随机',quest:'任务'}[t]||t),
@@ -740,7 +734,7 @@ function createCrudModule(config) {
   const { id, name, icon, group, apiPath, columns, formFields, idField = 'id', itemName = name } = config;
   let _data = [];
   let _page = 1;
-  let _pageSize = 20;
+  let _pageSize = parseInt(localStorage.getItem('xiuxian_page_size')) || 100;
   let _total = 0;
   let _searchKey = '';
 
@@ -750,7 +744,7 @@ function createCrudModule(config) {
     const res = await Api.get(apiPath, params);
     if (res.code === 0) {
       const d = res.data;
-      if (Array.isArray(d)) { _data = d; _total = d.length; }
+      if (Array.isArray(d)) { _total = d.length; _data = d.slice((_page - 1) * _pageSize, _page * _pageSize); }
       else if (d && (d.items || d.list || d.records || d.players)) {
         _data = d.items || d.list || d.records || d.players;
         _total = d.total || _data.length;
@@ -801,10 +795,18 @@ function createCrudModule(config) {
       html += '<td><button class="btn btn-sm" onclick="ModuleRegistry.get(\'' + id + '\')._editItem(\'' + Utils.escapeHtml(String(row[idField])) + '\')">编辑</button> <button class="btn btn-sm btn-danger" onclick="ModuleRegistry.get(\'' + id + '\')._deleteItem(\'' + Utils.escapeHtml(String(row[idField])) + '\')">删除</button></td></tr>';
     });
     html += '</tbody></table></div>';
+    const totalPages = Math.max(1, Math.ceil(_total / _pageSize));
+    html += '<div class="pagination">';
+    html += '<select class="form-select" style="width:auto;padding:4px 8px;font-size:12px" onchange="ModuleRegistry.get(\'' + id + '\')._changePageSize(this.value)">';
+    [20, 50, 100].forEach(s => { html += '<option value="' + s + '"' + (_pageSize === s ? ' selected' : '') + '>' + s + '条/页</option>'; });
+    html += '</select>';
     if (_total > _pageSize) {
-      const totalPages = Math.ceil(_total / _pageSize);
-      html += '<div class="pagination"><button class="btn btn-sm" ' + (_page<=1?'disabled':'') + ' onclick="ModuleRegistry.get(\'' + id + '\')._goPage(' + (_page-1) + ')">上一页</button><span class="page-info">' + _page + ' / ' + totalPages + '</span><button class="btn btn-sm" ' + (_page>=totalPages?'disabled':'') + ' onclick="ModuleRegistry.get(\'' + id + '\')._goPage(' + (_page+1) + ')">下一页</button></div>';
+      html += '<button class="btn btn-sm" ' + (_page<=1?'disabled':'') + ' onclick="ModuleRegistry.get(\'' + id + '\')._goPage(' + (_page-1) + ')">上一页</button>';
+      html += '<span class="page-info">' + _page + ' / ' + totalPages + '</span>';
+      html += '<button class="btn btn-sm" ' + (_page>=totalPages?'disabled':'') + ' onclick="ModuleRegistry.get(\'' + id + '\')._goPage(' + (_page+1) + ')">下一页</button>';
     }
+    html += '<span class="page-info">共 ' + _total + ' 条</span>';
+    html += '</div>';
     return html;
   }
 
@@ -860,6 +862,7 @@ function createCrudModule(config) {
     },
     _onSearch: Utils.debounce(async (key) => { _searchKey = key; _page = 1; await fetchData(); module._renderContent(); }, 400),
     async _goPage(p) { _page = p; await fetchData(); module._renderContent(); },
+    async _changePageSize(size) { _pageSize = parseInt(size); localStorage.setItem('xiuxian_page_size', _pageSize); _page = 1; await fetchData(); module._renderContent(); },
     _showCreate() {
       Modal.open('新增' + itemName, renderForm(), '<button class="btn" onclick="App.closeModal()">取消</button><button class="btn btn-primary" onclick="ModuleRegistry.get(\'' + id + '\')._doCreate()">创建</button>');
     },
@@ -993,7 +996,6 @@ ModuleRegistry.register(createCrudModule({
     { key: 'id', label: 'ID' },
     { key: 'name', label: '名称' },
     { key: 'item_type', label: '类型', render: v => Utils.itemTypeLabel(v) },
-    { key: 'rarity', label: '稀有度', render: v => Utils.rarityTag(v) },
     { key: 'effect_type', label: '效果类型' },
     { key: 'effect_value', label: '效果值' },
     { key: 'price', label: '价格', render: v => Number(v||0).toLocaleString() },
@@ -1004,7 +1006,6 @@ ModuleRegistry.register(createCrudModule({
     { key: 'name', label: '名称', required: true },
     { key: 'description', label: '描述', type: 'textarea', required: true },
     { key: 'item_type', label: '类型', type: 'select', required: true, options: [{value:'consumable',label:'消耗品'},{value:'equipment',label:'装备'},{value:'material',label:'材料'},{value:'currency',label:'货币'}] },
-    { key: 'rarity', label: '稀有度', type: 'select', default: 'common', options: [{value:'common',label:'普通'},{value:'uncommon',label:'优秀'},{value:'rare',label:'稀有'},{value:'epic',label:'史诗'},{value:'legendary',label:'传说'}] },
     { key: 'effect_type', label: '效果类型', type: 'select', options: [{value:'',label:'无'},{value:'heal',label:'治疗'},{value:'exp',label:'修为'},{value:'attack',label:'攻击'},{value:'defense',label:'防御'},{value:'spirit_stone',label:'灵石'}] },
     { key: 'effect_value', label: '效果值', type: 'number', default: 0 },
     { key: 'price', label: '价格', type: 'number', default: 0 },
@@ -1134,7 +1135,7 @@ ModuleRegistry.register({
     if (this._scheduled.length) {
       html += '<div class="table-wrapper"><table><thead><tr><th>ID</th><th>标题</th><th>Cron</th><th>状态</th><th>操作</th></tr></thead><tbody>';
       this._scheduled.forEach(s => {
-        html += '<tr><td>' + s.id + '</td><td>' + Utils.escapeHtml(s.title) + '</td><td><code>' + Utils.escapeHtml(s.cron_expression) + '</code></td><td>' + (s.enabled ? '<span class="tag tag-gold">启用</span>' : '<span class="tag tag-common">禁用</span>') + '</td><td>';
+        html += '<tr><td>' + s.id + '</td><td>' + Utils.escapeHtml(s.title) + '</td><td><code>' + Utils.escapeHtml(s.cron_expression) + '</code></td><td>' + (s.enabled ? '<span class="tag tag-gold">启用</span>' : '<span class="tag" style="background:rgba(149,165,166,0.2);color:#95a5a6">禁用</span>') + '</td><td>';
         html += '<button class="btn btn-sm" onclick="ModuleRegistry.get(\'notifications\')._toggleScheduled(' + s.id + ',' + !s.enabled + ')">' + (s.enabled?'禁用':'启用') + '</button> ';
         html += '<button class="btn btn-sm btn-danger" onclick="ModuleRegistry.get(\'notifications\')._deleteScheduled(' + s.id + ')">删除</button></td></tr>';
       });

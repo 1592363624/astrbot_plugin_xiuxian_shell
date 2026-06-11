@@ -43,6 +43,28 @@ class DeepSeclusionService:
         # 避世/入世操作冷却时间戳缓存 {player_id: timestamp}
         self._peace_mode_cooldowns: dict[str, float] = {}
 
+    @staticmethod
+    def _create_safe_task(coro, log_desc: str = ""):
+        """
+        创建带异常日志的异步后台任务
+
+        asyncio.create_task 创建的任务如果不被引用/不添加回调，
+        内部异常会被静默吞掉。此方法统一添加异常回调确保错误可追踪。
+
+        Args:
+            coro: 协程对象
+            log_desc: 任务描述（用于日志）
+        """
+        task = asyncio.create_task(coro)
+        task.add_done_callback(
+            lambda t: (
+                logger.error(f"后台任务异常({log_desc}): {t.exception()}")
+                if t.exception() and not t.cancelled()
+                else None
+            )
+        )
+        return task
+
     async def restore_ongoing_seclusion_tasks(self):
         """
         恢复所有进行中的深度闭关定时任务
@@ -68,10 +90,11 @@ class DeepSeclusionService:
             if now >= ended_at:
                 logger.info(f"深度闭关记录 {record_id} 在离线期间已到期，立即执行模拟")
                 dao_heart = await self._check_dao_heart_broken(player_id)
-                asyncio.create_task(
+                self._create_safe_task(
                     self._simulate_deep_seclusion(
                         record_id, player_id, duration_hours, dao_heart
-                    )
+                    ),
+                    f"恢复到期闭关模拟(记录{record_id})",
                 )
             else:
                 remaining_seconds = (ended_at - now).total_seconds()
@@ -79,10 +102,11 @@ class DeepSeclusionService:
                     f"恢复深度闭关定时任务，记录ID: {record_id}，剩余{remaining_seconds:.0f}秒"
                 )
                 dao_heart = await self._check_dao_heart_broken(player_id)
-                asyncio.create_task(
+                self._create_safe_task(
                     self._schedule_deep_seclusion_simulation(
                         record_id, player_id, duration_hours, dao_heart, ended_at
-                    )
+                    ),
+                    f"恢复进行中闭关定时(记录{record_id})",
                 )
 
         logger.info(f"已恢复 {len(ongoing_records)} 个深度闭关定时任务")
@@ -222,10 +246,11 @@ class DeepSeclusionService:
         await self.db.commit()
 
         # 启动定时任务，在ended_at到达时自动模拟闭关
-        asyncio.create_task(
+        self._create_safe_task(
             self._schedule_deep_seclusion_simulation(
                 record_id, player_id, duration_hours, dao_heart_penalty, ended_at
-            )
+            ),
+            f"深度闭关定时模拟(记录{record_id})",
         )
 
         ended_at_local = ended_at

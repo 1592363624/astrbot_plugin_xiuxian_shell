@@ -55,15 +55,7 @@ class ItemAPI:
 
         inventory_text = f"【{player_dict['username']}的储物袋】\n"
         for item in items:
-            rarity_map = {
-                "common": "普通",
-                "uncommon": "优秀",
-                "rare": "稀有",
-                "epic": "史诗",
-                "legendary": "传说",
-            }
-            rarity = rarity_map.get(item.get("rarity", "common"), "普通")
-            inventory_text += f"- {item['name']} x{item['quantity']} [{rarity}]\n"
+            inventory_text += f"- {item['name']} x{item['quantity']}\n"
 
         return inventory_text.strip()
 

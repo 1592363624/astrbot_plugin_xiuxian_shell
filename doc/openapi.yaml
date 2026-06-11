@@ -788,11 +788,6 @@ components:
           type: string
           description: 物品类型
           enum: [consumable, equipment, material, currency]
-        rarity:
-          type: string
-          description: 稀有度
-          enum: [common, uncommon, rare, epic, legendary]
-          default: common
         effect_type:
           type: string
           description: 效果类型
@@ -821,8 +816,6 @@ components:
         description:
           type: string
         item_type:
-          type: string
-        rarity:
           type: string
         effect_type:
           type: string

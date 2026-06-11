@@ -147,6 +147,8 @@ class XiuxianPlugin(Star):
         logger.info("重生之凡人修仙游戏插件初始化中...")
         # 应用数据库迁移
         await self.migration_manager.apply_migrations()
+        # 确保被动修为每日统计表存在（Bot重启后数据不丢失）
+        await self.player_service.ensure_daily_stats_table()
         # 加载已注册玩家到内存缓存
         await self.player_service.load_all_players_to_cache()
         # 恢复进行中的深度闭关定时任务
@@ -161,9 +163,11 @@ class XiuxianPlugin(Star):
             )
         except Exception as e:
             logger.error(f"修仙后台管理独立服务器启动失败: {e}")
-        # 启动定时通知检查任务
+        # 启动定时通知检查任务（先停止旧任务避免重入）
+        await self._stop_scheduled_notification_checker()
         self._start_scheduled_notification_checker()
-        # 启动玩家状态定时tick任务
+        # 启动玩家状态定时tick任务（先停止旧任务避免重入）
+        await self._stop_state_tick()
         self._start_state_tick()
         logger.info("重生之凡人修仙游戏插件初始化完成")
 
@@ -175,10 +179,10 @@ class XiuxianPlugin(Star):
             await self.admin_server.stop()
         except Exception as e:
             logger.error(f"停止独立管理服务器失败: {e}")
-        # 停止定时通知检查任务
-        self._stop_scheduled_notification_checker()
-        # 停止玩家状态定时tick任务
-        self._stop_state_tick()
+        # 停止定时通知检查任务并等待其完成
+        await self._stop_scheduled_notification_checker()
+        # 停止玩家状态定时tick任务并等待其完成
+        await self._stop_state_tick()
         # 关闭数据库连接
         await self.db_manager.close()
         logger.info("重生之凡人修仙游戏插件已卸载")
@@ -212,13 +216,20 @@ class XiuxianPlugin(Star):
                 except Exception as e:
                     logger.error(f"定时通知检查循环异常: {e}")
 
-        self._scheduled_check_task = asyncio.ensure_future(_check_loop())
+        self._scheduled_check_task = asyncio.create_task(_check_loop(), name="xiuxian_notification_checker")
         logger.info("定时通知检查任务已启动（每60秒检查一次）")
 
-    def _stop_scheduled_notification_checker(self):
+    async def _stop_scheduled_notification_checker(self):
         """停止定时通知检查后台任务"""
+        import asyncio
+
         if self._scheduled_check_task and not self._scheduled_check_task.done():
             self._scheduled_check_task.cancel()
+            try:
+                await self._scheduled_check_task
+            except asyncio.CancelledError:
+                pass
+            self._scheduled_check_task = None
             logger.info("定时通知检查任务已停止")
 
     # ==================== 玩家状态定时tick ====================
@@ -233,10 +244,16 @@ class XiuxianPlugin(Star):
             while True:
                 try:
                     await asyncio.sleep(600)
-                    # 批量清理所有玩家的过期数据
+                    # 批量清理所有玩家的过期数据（丹毒、临时增益）
                     cleaned = await self.state_checker.cleanup_all_expired()
                     if cleaned > 0:
                         logger.info(f"玩家状态tick: 清理了{cleaned}条过期记录")
+
+                    # 清理所有玩家的过期状态（道心破碎、避世等过期状态）
+                    try:
+                        await self.deep_seclusion_service.cleanup_expired_states()
+                    except Exception as e:
+                        logger.error(f"tick清理过期玩家状态失败: {e}")
 
                     # 检查所有玩家的突破状态（生成待通知列表）
                     notifications = await self.state_checker.tick_all_players()
@@ -269,13 +286,20 @@ class XiuxianPlugin(Star):
                 except Exception as e:
                     logger.error(f"玩家状态tick循环异常: {e}")
 
-        self._state_tick_task = asyncio.ensure_future(_tick_loop())
+        self._state_tick_task = asyncio.create_task(_tick_loop(), name="xiuxian_state_tick")
         logger.info("玩家状态定时tick已启动（每10分钟检查一次）")
 
-    def _stop_state_tick(self):
+    async def _stop_state_tick(self):
         """停止玩家状态定时tick后台任务"""
+        import asyncio
+
         if self._state_tick_task and not self._state_tick_task.done():
             self._state_tick_task.cancel()
+            try:
+                await self._state_tick_task
+            except asyncio.CancelledError:
+                pass
+            self._state_tick_task = None
             logger.info("玩家状态定时tick已停止")
 
     # ==================== 封禁检查辅助方法 ====================
@@ -317,19 +341,23 @@ class XiuxianPlugin(Star):
         if ban_message:
             return
 
+        # 检查用户是否已注册，未注册则自动创建并跳过后续逻辑
+        player_dict, error = await self.player_service.check_player_registered(user_id)
+        if error and "自动" in error:
+            username = event.get_sender_name()
+            await self.player_service.auto_register_player(user_id, username)
+            return
+
+        # player_dict 为 None 说明查询异常，跳过后续处理
+        if not player_dict:
+            return
+
         # 记录玩家会话信息，用于后续主动推送通知
         await self.notification_service.record_player_session(
             user_id=user_id,
             unified_msg_origin=event.unified_msg_origin,
             platform_name=event.get_platform_name(),
         )
-        # 检查用户是否已注册，未注册则自动创建
-        player_dict, error = await self.player_service.check_player_registered(user_id)
-        if error and "自动" in error:
-            # 自动注册新用户
-            username = event.get_sender_name()
-            await self.player_service.auto_register_player(user_id, username)
-            return
 
         # 自动结算未完成的深度闭关
         try:
@@ -338,12 +366,6 @@ class XiuxianPlugin(Star):
                 await event.send(MessageChain([Plain(settle_result)]))
         except Exception as e:
             logger.error(f"深度闭关结算失败: {e}")
-
-        # 清理过期状态
-        try:
-            await self.deep_seclusion_service.cleanup_expired_states()
-        except Exception as e:
-            logger.error(f"清理过期状态失败: {e}")
 
         # 群聊发言被动增长修为（仅限群聊消息）
         if event.get_group_id():
@@ -727,7 +749,7 @@ class XiuxianPlugin(Star):
 丹毒 - 查看丹毒状态
 储物袋 - 查看储物袋物品
 更改道号 <新道号> - 修改角色道号（2-6个中文字符）
-修仙签到 - 每日签到获取修为奖励
+签到 - 每日签到获取修为奖励
 签到状态 - 查看签到状态和奖励规则
 签到排行 - 查看签到排行榜
 排行榜 <类型> - 查看排行榜，类型：境界/发言/财富

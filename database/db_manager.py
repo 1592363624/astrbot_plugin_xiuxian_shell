@@ -3,12 +3,16 @@
 负责SQLite数据库连接管理和基本操作
 """
 
+import re
 from pathlib import Path
 from typing import Any
 
 import aiosqlite
 
 from astrbot.api import logger
+
+# PRAGMA table_name 不支持参数化，用正则白名单校验防止注入
+_TABLE_NAME_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
 class DatabaseManager:
@@ -136,6 +140,23 @@ class DatabaseManager:
         result = await self.fetch_one(sql, (table_name,))
         return result is not None
 
+    async def column_exists(self, table_name: str, column_name: str) -> bool:
+        """
+        检查表中指定列是否存在
+
+        Args:
+            table_name: 表名
+            column_name: 列名
+
+        Returns:
+            bool: 列是否存在
+        """
+        if not _TABLE_NAME_RE.match(table_name):
+            raise ValueError(f"Invalid table name: {table_name}")
+        sql = f"PRAGMA table_info({table_name})"
+        columns = await self.fetch_all(sql)
+        return any(col["name"] == column_name for col in columns)
+
     async def get_table_info(self, table_name: str) -> list[dict[str, Any]]:
         """
         获取表结构信息
@@ -146,5 +167,7 @@ class DatabaseManager:
         Returns:
             List[Dict[str, Any]]: 表结构信息列表
         """
+        if not _TABLE_NAME_RE.match(table_name):
+            raise ValueError(f"Invalid table name: {table_name}")
         sql = f"PRAGMA table_info({table_name})"
         return await self.fetch_all(sql)
