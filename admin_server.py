@@ -379,11 +379,11 @@ class AdminServer:
 
         players = await self.admin_api.player_service.get_all_players(page=1, page_size=10000)
         realm_stats = {}
-        realms_cache = {r.level: r.name for r in await self.admin_api.cultivation_service.get_all_realms()}
+        realms_cache = {r.id: r.name for r in await self.admin_api.cultivation_service.get_all_realms()}
 
         for player_data in players.get("players", []):
-            realm_level = player_data.get("realm_level", 1)
-            realm_name = realms_cache.get(realm_level, "未知")
+            realm_id = player_data.get("realm_id", "realm_001")
+            realm_name = realms_cache.get(realm_id, "未知")
             realm_stats[realm_name] = realm_stats.get(realm_name, 0) + 1
 
         realm_distribution = [{"name": name, "count": count} for name, count in realm_stats.items()]

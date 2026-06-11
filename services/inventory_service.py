@@ -174,15 +174,32 @@ class InventoryService:
         Returns:
             List[Dict[str, Any]]: 储物袋物品列表
         """
-        sql = """
-            SELECT pi.*, i.name, i.description, i.item_type, i.effect_type, i.effect_value
-            FROM player_inventory pi
-            JOIN items i ON pi.item_id = i.id
-            WHERE pi.player_id = ?
-            ORDER BY pi.created_at DESC
-        """
+        # 先从数据库获取玩家背包数据
+        sql = "SELECT * FROM player_inventory WHERE player_id = ? ORDER BY created_at DESC"
         rows = await self.db.fetch_all(sql, (player_id,))
-        return rows
+        
+        # 从JSON数据获取物品详情并合并
+        await self._ensure_items_loaded()
+        result = []
+        for row in rows:
+            item_data = dict(row)
+            item_id = row.get("item_id")
+            if item_id and item_id in self._items_cache:
+                item = self._items_cache[item_id]
+                item_data["name"] = item.name
+                item_data["description"] = item.description
+                item_data["item_type"] = item.item_type
+                item_data["effect_type"] = item.effect_type
+                item_data["effect_value"] = item.effect_value
+            else:
+                # 物品不存在时使用默认值
+                item_data["name"] = f"未知物品({item_id})"
+                item_data["description"] = ""
+                item_data["item_type"] = "unknown"
+                item_data["effect_type"] = None
+                item_data["effect_value"] = None
+            result.append(item_data)
+        return result
 
     async def add_item(
         self, player_id: str, item_id: str, quantity: int = 1

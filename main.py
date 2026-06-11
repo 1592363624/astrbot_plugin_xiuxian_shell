@@ -331,9 +331,9 @@ class XiuxianPlugin(Star):
 
     # ==================== 事件监听区域 ====================
 
-    @filter.event_message_type(filter.EventMessageType.ALL)
+    @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE | filter.EventMessageType.PRIVATE_MESSAGE)
     async def on_message(self, event: AstrMessageEvent):
-        """监听所有消息，自动为未注册用户创建角色，并记录玩家会话信息"""
+        """监听用户消息，自动为未注册用户创建角色，并记录玩家会话信息"""
         user_id = event.get_sender_id()
 
         # 检查玩家是否被封禁，被封禁则不再处理

@@ -769,11 +769,11 @@ class PlayerService:
         )
         return result
 
-    async def _get_realms_cache(self) -> dict[int, str]:
-        """获取境界等级→名称映射缓存，避免重复查询"""
+    async def _get_realms_cache(self) -> dict[str, str]:
+        """获取境界ID→名称映射缓存，避免重复查询"""
         if not self._realms_cache and self.cultivation_service:
             realms = await self.cultivation_service.get_all_realms()
-            self._realms_cache = {r.level: r.name for r in realms}
+            self._realms_cache = {r.id: r.name for r in realms}
         return self._realms_cache
 
     async def get_leaderboard(
@@ -795,11 +795,11 @@ class PlayerService:
             # 按境界等级降序，同境界按修为降序
             rows = await self.db.fetch_all(
                 """
-                SELECT username, experience, realm_level,
+                SELECT username, experience, realm_id,
                        bone, spirit, intel, str, percep, luck
                 FROM players
                 WHERE is_deleted = 0 OR is_deleted IS NULL
-                ORDER BY realm_level DESC, experience DESC
+                ORDER BY realm_id DESC, experience DESC
                 LIMIT ?
                 """,
                 (limit,),
@@ -808,9 +808,9 @@ class PlayerService:
                 {
                     "rank": i + 1,
                     "username": row["username"],
-                    "realm_name": realms_cache.get(row["realm_level"], "未知"),
+                    "realm_name": realms_cache.get(row["realm_id"], "未知"),
                     "experience": row["experience"],
-                    "realm_level": row["realm_level"],
+                    "realm_id": row["realm_id"],
                     "total_attrs": (
                         row["bone"]
                         + row["spirit"]
@@ -827,7 +827,7 @@ class PlayerService:
             # 按发言次数降序
             rows = await self.db.fetch_all(
                 """
-                SELECT p.username, p.realm_level, COUNT(c.id) as chat_count
+                SELECT p.username, p.realm_id, COUNT(c.id) as chat_count
                 FROM players p
                 LEFT JOIN chat_logs c ON p.id = c.player_id
                 WHERE p.is_deleted = 0 OR p.is_deleted IS NULL
@@ -841,7 +841,7 @@ class PlayerService:
                 {
                     "rank": i + 1,
                     "username": row["username"],
-                    "realm_name": realms_cache.get(row["realm_level"], "未知"),
+                    "realm_name": realms_cache.get(row["realm_id"], "未知"),
                     "chat_count": row["chat_count"],
                 }
                 for i, row in enumerate(rows)
@@ -851,7 +851,7 @@ class PlayerService:
             # 按灵石数量降序
             rows = await self.db.fetch_all(
                 """
-                SELECT username, realm_level, spirit_stone
+                SELECT username, realm_id, spirit_stone
                 FROM players
                 WHERE is_deleted = 0 OR is_deleted IS NULL
                 ORDER BY spirit_stone DESC
@@ -863,7 +863,7 @@ class PlayerService:
                 {
                     "rank": i + 1,
                     "username": row["username"],
-                    "realm_name": realms_cache.get(row["realm_level"], "未知"),
+                    "realm_name": realms_cache.get(row["realm_id"], "未知"),
                     "spirit_stone": row["spirit_stone"],
                 }
                 for i, row in enumerate(rows)

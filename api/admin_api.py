@@ -415,13 +415,13 @@ class AdminAPI:
             "SELECT SUM(spirit_stone) as total FROM players"
         )
 
-        all_realms = {r.level: r.name for r in await self.cultivation_service.get_all_realms()}
+        all_realms = {r.id: r.name for r in await self.cultivation_service.get_all_realms()}
         players_result = await self.player_service.get_all_players(page=1, page_size=100000)
         realm_stats = {}
 
         for player_data in players_result.get("players", []):
-            realm_level = player_data.get("realm_level", 1)
-            realm_name = all_realms.get(realm_level, "未知")
+            realm_id = player_data.get("realm_id", "realm_001")
+            realm_name = all_realms.get(realm_id, "未知")
             realm_stats[realm_name] = realm_stats.get(realm_name, 0) + 1
 
         realm_distribution = [{"name": name, "count": count} for name, count in realm_stats.items()]
